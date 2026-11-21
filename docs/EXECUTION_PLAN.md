@@ -1,10 +1,9 @@
 # Execution plan (working)
 
-Source of truth for the API: `gridapi_server` working tree at
-`/Users/rohan3155/Desktop/lab/micro-saas/gridapi_server` (uncommitted changes
-present — read-only; never modified).
+Source of truth for the API: the canonical OpenAPI contract in `openapi/openapi.yaml`
+and the generated `openapi/openapi.json`. The private backend is never vendored here.
 
-## Contract facts (verified from server source)
+## Contract facts (verified from the public contract)
 - Fastify, single hardcoded version `/api/v1`; no OpenAPI spec exists in server.
 - Public data API: `GET|POST|PUT|DELETE /api/v1/{projectSlug}/{endpoint}` and
   `GET|PATCH|PUT|DELETE /api/v1/{projectSlug}/{endpoint}/{id}`. POST not allowed on `/:id`.

@@ -5,11 +5,11 @@ Thanks for helping improve the GridAPI SDKs.
 ## Layout
 
 - `openapi/openapi.yaml` — the canonical API contract, generated/validated from
-  the `gridapi_server` implementation. It is the source of truth; SDKs never
+  the public OpenAPI contract in `openapi/openapi.yaml`. SDKs never
   invent endpoints.
 - `packages/<language>/` — one independently versioned package per language.
 - `tests/contract/` — language-agnostic scenarios every SDK must pass.
-- `tests/integration/` — tests against a real `gridapi_server` instance.
+- `tests/integration/` — optional tests against a live GridAPI account.
 - `docs/` — concept guides and the compatibility matrix. The public docs site
   (`gridapi_client`) consumes structured metadata from `docs/sdk-manifest.json`.
 
