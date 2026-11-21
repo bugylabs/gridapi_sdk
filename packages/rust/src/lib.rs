@@ -88,9 +88,17 @@ pub struct SheetInfo {
     pub name: Option<String>,
     #[serde(rename = "sheetName", default, skip_serializing_if = "Option::is_none")]
     pub sheet_name: Option<String>,
-    #[serde(rename = "primaryKey", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "primaryKey",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub primary_key: Option<String>,
-    #[serde(rename = "allowedMethods", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "allowedMethods",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub allowed_methods: Option<Vec<String>>,
 }
 
@@ -100,7 +108,11 @@ pub struct ProjectInfo {
     pub name: String,
     pub slug: String,
     pub role: String,
-    #[serde(rename = "spreadsheetId", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "spreadsheetId",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub spreadsheet_id: Option<String>,
     #[serde(default)]
     pub sheets: Vec<SheetInfo>,
@@ -116,7 +128,11 @@ pub struct SchemaField {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TableSchema {
     pub endpoint: String,
-    #[serde(rename = "primaryKey", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "primaryKey",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub primary_key: Option<String>,
     #[serde(default)]
     pub fields: Vec<SchemaField>,
@@ -509,7 +525,11 @@ fn encode_segment(value: &str) -> String {
 }
 
 fn data_path(project: &str, table: &str) -> String {
-    format!("/api/v1/{}/{}", encode_segment(project), encode_segment(table))
+    format!(
+        "/api/v1/{}/{}",
+        encode_segment(project),
+        encode_segment(table)
+    )
 }
 
 fn data_path_with_id(project: &str, table: &str, id: &str) -> String {
@@ -689,7 +709,10 @@ impl Client {
             Err(ureq::Error::Transport(transport)) => {
                 let text = transport.to_string().to_lowercase();
                 let message = format!("GridAPI network error: {transport}");
-                if text.contains("timed out") || text.contains("timeout") || text.contains("too slow") {
+                if text.contains("timed out")
+                    || text.contains("timeout")
+                    || text.contains("too slow")
+                {
                     Err(GridError::Timeout(with_no_status(&message)))
                 } else {
                     Err(GridError::Network(with_no_status(&message)))
@@ -767,7 +790,12 @@ impl Client {
     }
 
     /// Count matching records using `limit=1` and the list response's `meta.total`.
-    pub fn count(&self, project: &str, table: &str, filter: Option<&str>) -> Result<u64, GridError> {
+    pub fn count(
+        &self,
+        project: &str,
+        table: &str,
+        filter: Option<&str>,
+    ) -> Result<u64, GridError> {
         let options = QueryOptions {
             filter: filter.map(str::to_string),
             limit: Some(1),
@@ -778,14 +806,29 @@ impl Client {
 
     /// Retrieve one record by its primary key.
     pub fn get_by_id(&self, project: &str, table: &str, id: &str) -> Result<GridRecord, GridError> {
-        let body = self.request(Method::Get, data_path_with_id(project, table, id), vec![], None)?;
+        let body = self.request(
+            Method::Get,
+            data_path_with_id(project, table, id),
+            vec![],
+            None,
+        )?;
         serde_json::from_str(&body).map_err(|err| decode_error(&err))
     }
 
     /// Insert one or more records. This is a write and is never retried.
-    pub fn post(&self, project: &str, table: &str, records: &[GridRecord]) -> Result<CreateResponse, GridError> {
+    pub fn post(
+        &self,
+        project: &str,
+        table: &str,
+        records: &[GridRecord],
+    ) -> Result<CreateResponse, GridError> {
         let payload = serde_json::to_string(records).map_err(|err| decode_error(&err))?;
-        let body = self.request(Method::Post, data_path(project, table), vec![], Some(payload))?;
+        let body = self.request(
+            Method::Post,
+            data_path(project, table),
+            vec![],
+            Some(payload),
+        )?;
         serde_json::from_str(&body).map_err(|err| decode_error(&err))
     }
 
@@ -826,8 +869,18 @@ impl Client {
     }
 
     /// Delete a record by its primary key.
-    pub fn delete(&self, project: &str, table: &str, id: &str) -> Result<DeleteResponse, GridError> {
-        let body = self.request(Method::Delete, data_path_with_id(project, table, id), vec![], None)?;
+    pub fn delete(
+        &self,
+        project: &str,
+        table: &str,
+        id: &str,
+    ) -> Result<DeleteResponse, GridError> {
+        let body = self.request(
+            Method::Delete,
+            data_path_with_id(project, table, id),
+            vec![],
+            None,
+        )?;
         serde_json::from_str(&body).map_err(|err| decode_error(&err))
     }
 

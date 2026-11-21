@@ -28,6 +28,8 @@ struct MockServer {
 }
 
 impl MockServer {
+    // Drop kills and waits for the child on every path.
+    #[allow(clippy::zombie_processes)]
     fn start(port: u16) -> Self {
         let script = repo_root().join("tests/contract/mock-server.mjs");
         let child = Command::new("node")
@@ -77,7 +79,9 @@ fn crud_filter_pagination_and_count() {
     let server = MockServer::start(18795);
     let client = server.client();
 
-    let all = client.get("acme", "users", &QueryOptions::default()).unwrap();
+    let all = client
+        .get("acme", "users", &QueryOptions::default())
+        .unwrap();
     assert_eq!(all.data.len(), 3);
     assert_eq!(all.meta.total, 3);
     assert_eq!(all.meta.limit, 100);
@@ -112,7 +116,9 @@ fn crud_filter_pagination_and_count() {
 
     assert_eq!(client.count("acme", "users", None).unwrap(), 3);
     assert_eq!(
-        client.count("acme", "users", Some("status:active")).unwrap(),
+        client
+            .count("acme", "users", Some("status:active"))
+            .unwrap(),
         2
     );
 
@@ -196,7 +202,9 @@ fn error_mapping() {
     ));
 
     let quota = server.at("/fault/quota");
-    let err = quota.get("acme", "users", &QueryOptions::default()).unwrap_err();
+    let err = quota
+        .get("acme", "users", &QueryOptions::default())
+        .unwrap_err();
     assert!(matches!(err, GridError::QuotaExceeded(_)));
     assert!(!err.retryable());
 
@@ -206,7 +214,9 @@ fn error_mapping() {
         .max_retries(0)
         .build()
         .unwrap();
-    let err = rate.get("acme", "users", &QueryOptions::default()).unwrap_err();
+    let err = rate
+        .get("acme", "users", &QueryOptions::default())
+        .unwrap_err();
     assert!(matches!(err, GridError::RateLimit(_)));
     assert!(err.retryable());
 }
@@ -233,7 +243,9 @@ fn redaction() {
 fn retries_honour_method_and_retry_after() {
     let server = MockServer::start(18798);
     let flaky = server.at("/fault/rate");
-    let page = flaky.get("acme", "users", &QueryOptions::default()).unwrap();
+    let page = flaky
+        .get("acme", "users", &QueryOptions::default())
+        .unwrap();
     assert_eq!(page.data.len(), 3);
 
     let always = ClientBuilder::new()
@@ -298,7 +310,14 @@ fn env_configuration() {
     std::env::set_var("GRIDAPI_TIMEOUT_MS", "1500");
 
     let client = Client::from_env().unwrap();
-    assert_eq!(client.get("acme", "users", &QueryOptions::default()).unwrap().data.len(), 3);
+    assert_eq!(
+        client
+            .get("acme", "users", &QueryOptions::default())
+            .unwrap()
+            .data
+            .len(),
+        3
+    );
 
     // Explicit builder overrides win over the environment.
     let overridden = ClientBuilder::new().api_key(OTHER_KEY).build().unwrap();
