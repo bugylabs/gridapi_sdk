@@ -81,6 +81,41 @@ def main():
         if not any(pkg.glob("README.md")):
             errors.append(f"{lang['id']}: missing package README")
 
+    # 5. Release metadata: one version, proprietary license, no private refs.
+    release_files = {
+        "packages/javascript/package.json": ('"version": "1.0.0"', '"license": "SEE LICENSE IN LICENSE"'),
+        "packages/python/pyproject.toml": ('version = "1.0.0"', 'license = { file = "LICENSE" }'),
+        "packages/java/pom.xml": ("<version>1.0.0</version>", "BugyLabs Proprietary"),
+        "packages/dotnet/GridAPI/GridAPI.csproj": ("<Version>1.0.0</Version>", "<PackageLicenseFile>"),
+        "packages/rust/Cargo.toml": ('version = "1.0.0"', 'license-file = "LICENSE"'),
+    }
+    for rel, needles in release_files.items():
+        text = (ROOT / rel).read_text()
+        for needle in needles:
+            if needle not in text:
+                errors.append(f"{rel}: missing release metadata {needle!r}")
+        if re.search(r"(MIT|Apache-2\.0|BSD-3-Clause)\b", text):
+            errors.append(f"{rel}: permissive license metadata still present")
+    if "module github.com/bugylabs/gridapi-sdk" not in (ROOT / "go.mod").read_text():
+        errors.append("go.mod: module path is not the canonical repository")
+    for lang in manifest["languages"]:
+        readme = ROOT / "packages" / lang["id"] / "README.md"
+        text = readme.read_text() if readme.exists() else ""
+        if "Copyright (c) 2026 BugyLabs. All Rights Reserved." not in text:
+            errors.append(f"{lang['id']}: README missing proprietary license notice")
+    private_refs = re.compile(r"/Users/|gridapi_server|github\.com/gridapi/gridapi_sdk")
+    for path in ROOT.rglob("*"):
+        rel = path.relative_to(ROOT)
+        if not path.is_file() or any(part in {".git", "node_modules", "dist", "target", "obj", "bin"} for part in rel.parts):
+            continue
+        # The audit report quotes the legacy paths deliberately; this file defines the pattern.
+        if rel.as_posix() in {"AUDIT_REPORT.md", "scripts/validate_contract.py"}:
+            continue
+        if path.suffix not in {".md", ".json", ".yaml", ".yml", ".toml", ".xml", ".csproj", ".py", ".ts", ".mjs", ".go", ".rs", ".java", ".cs", ".mod"}:
+            continue
+        if private_refs.search(path.read_text(errors="ignore")):
+            errors.append(f"{rel}: private/legacy repository reference")
+
     if errors:
         for e in errors:
             print(f"  - {e}")

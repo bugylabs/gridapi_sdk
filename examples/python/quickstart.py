@@ -9,7 +9,7 @@ Reads credentials from the environment only — no keys in source::
 
 Against the local contract mock server instead:
 
-    GRIDAPI_API_KEY=gp_live_testkey \\
+    GRIDAPI_API_KEY=<your-local-test-key> \\
     GRIDAPI_BASE_URL=http://127.0.0.1:8787 \\
     python3 examples/python/quickstart.py
 """

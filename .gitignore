@@ -32,3 +32,5 @@ venv/
 # Test / coverage artifacts
 coverage/
 *.lcov
+*.egg-info/
+examples/**/Cargo.lock
