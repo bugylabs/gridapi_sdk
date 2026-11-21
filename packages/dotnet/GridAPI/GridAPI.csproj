@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>GridAPI</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>GridAPI</Authors>
+    <Description>Official server-side .NET SDK for the GridAPI public REST API.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>

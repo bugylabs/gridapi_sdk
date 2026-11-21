@@ -1,0 +1,28 @@
+{
+  "name": "@gridapi/sdk",
+  "version": "0.1.0",
+  "description": "Official TypeScript/JavaScript SDK for the GridAPI REST API",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "engines": { "node": ">=18" },
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/finalize.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

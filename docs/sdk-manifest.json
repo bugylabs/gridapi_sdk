@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "api": {
+    "version": "1.0.0",
+    "contract": "openapi/openapi.yaml",
+    "defaultBaseUrl": "https://api.gridapi.in",
+    "apiKeyEnv": "GRIDAPI_API_KEY",
+    "baseUrlEnv": "GRIDAPI_BASE_URL",
+    "timeoutEnv": "GRIDAPI_TIMEOUT_MS",
+    "authHeader": "Authorization: Bearer <key>",
+    "note": "The key is account-level. A project slug is a routing/authorization target, never a credential."
+  },
+  "operations": [
+    { "name": "get", "operationId": "listRecords", "http": "GET", "path": "/api/v1/{projectSlug}/{endpoint}", "summary": "Retrieve records" },
+    { "name": "getById", "operationId": "getRecord", "http": "GET", "path": "/api/v1/{projectSlug}/{endpoint}/{id}", "summary": "Retrieve one record by primary key" },
+    { "name": "post", "operationId": "createRecords", "http": "POST", "path": "/api/v1/{projectSlug}/{endpoint}", "summary": "Insert a record or records" },
+    { "name": "patch", "operationId": "patchRecord", "http": "PATCH", "path": "/api/v1/{projectSlug}/{endpoint}/{id}", "summary": "Partially update a record" },
+    { "name": "put", "operationId": "replaceRecord", "http": "PUT", "path": "/api/v1/{projectSlug}/{endpoint}/{id}", "summary": "Replace a record" },
+    { "name": "delete", "operationId": "deleteRecord", "http": "DELETE", "path": "/api/v1/{projectSlug}/{endpoint}/{id}", "summary": "Delete a record" },
+    { "name": "query", "operationId": "listRecords", "http": "GET", "path": "/api/v1/{projectSlug}/{endpoint}", "summary": "Filter and paginate records" },
+    { "name": "count", "operationId": "listRecords", "http": "GET", "path": "/api/v1/{projectSlug}/{endpoint}", "summary": "Count matching records via meta.total" },
+    { "name": "listProjects", "operationId": "listProjects", "http": "GET", "path": "/api/v1/me/projects", "summary": "Discover authorized projects" },
+    { "name": "listTables", "operationId": "listProjects", "http": "GET", "path": "/api/v1/me/projects", "summary": "Discover a project's tables from project sheets" },
+    { "name": "getSchema", "operationId": "getProjectDocs", "http": "GET", "path": "/api/v1/me/projects/{projectRef}/docs", "summary": "Retrieve table schema from generated project docs" },
+    { "name": "getMe", "operationId": "getMe", "http": "GET", "path": "/api/v1/me", "summary": "Authenticated account and subscription" },
+    { "name": "getUsage", "operationId": "getUsage", "http": "GET", "path": "/api/v1/me/usage", "summary": "Current account usage" }
+  ],
+  "unsupported": [
+    "Server-side sorting and text search are accepted but ignored on the live Google Sheets data source; SDKs must not implement them client-side.",
+    "There is no dedicated count endpoint; count uses the list response meta.total with limit=1."
+  ],
+  "languages": [
+    {
+      "id": "javascript",
+      "label": "JavaScript / TypeScript",
+      "package": "@gridapi/sdk",
+      "registry": "npm",
+      "install": "npm install @gridapi/sdk",
+      "source": "https://github.com/gridapi/gridapi_sdk/tree/main/packages/javascript",
+      "registryUrl": "https://www.npmjs.com/package/@gridapi/sdk",
+      "class": "GridApiClient",
+      "exportStyle": "named",
+      "sourceFile": "packages/javascript/src/index.ts"
+    },
+    {
+      "id": "python",
+      "label": "Python",
+      "package": "gridapi-sdk",
+      "registry": "PyPI",
+      "install": "pip install gridapi-sdk",
+      "source": "https://github.com/gridapi/gridapi_sdk/tree/main/packages/python",
+      "registryUrl": "https://pypi.org/project/gridapi-sdk/",
+      "class": "GridApiClient",
+      "exportStyle": "named",
+      "sourceFile": "packages/python/gridapi/__init__.py"
+    },
+    {
+      "id": "java",
+      "label": "Java",
+      "package": "io.gridapi:gridapi-sdk",
+      "registry": "Maven Central",
+      "install": "<dependency><groupId>io.gridapi</groupId><artifactId>gridapi-sdk</artifactId><version>0.1.0</version></dependency>",
+      "source": "https://github.com/gridapi/gridapi_sdk/tree/main/packages/java",
+      "registryUrl": "https://central.sonatype.com/artifact/io.gridapi/gridapi-sdk",
+      "class": "GridApiClient",
+      "exportStyle": "class",
+      "sourceFile": "packages/java/src/main/java/io/gridapi/GridApiClient.java"
+    },
+    {
+      "id": "dotnet",
+      "label": ".NET / C#",
+      "package": "GridAPI",
+      "registry": "NuGet",
+      "install": "dotnet add package GridAPI",
+      "source": "https://github.com/gridapi/gridapi_sdk/tree/main/packages/dotnet",
+      "registryUrl": "https://www.nuget.org/packages/GridAPI/",
+      "class": "GridApiClient",
+      "exportStyle": "class",
+      "sourceFile": "packages/dotnet/GridAPI/GridApiClient.cs"
+    },
+    {
+      "id": "go",
+      "label": "Go",
+      "package": "github.com/gridapi/gridapi-go",
+      "registry": "Go modules",
+      "install": "go get github.com/gridapi/gridapi-go",
+      "source": "https://github.com/gridapi/gridapi_sdk/tree/main/packages/go",
+      "registryUrl": "https://pkg.go.dev/github.com/gridapi/gridapi-go",
+      "class": "Client",
+      "exportStyle": "struct",
+      "sourceFile": "packages/go/gridapi.go"
+    },
+    {
+      "id": "rust",
+      "label": "Rust",
+      "package": "gridapi-sdk",
+      "registry": "crates.io",
+      "install": "cargo add gridapi-sdk",
+      "source": "https://github.com/gridapi/gridapi_sdk/tree/main/packages/rust",
+      "registryUrl": "https://crates.io/crates/gridapi-sdk",
+      "class": "Client",
+      "exportStyle": "struct",
+      "sourceFile": "packages/rust/src/lib.rs"
+    }
+  ]
+}

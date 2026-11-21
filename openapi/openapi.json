@@ -1,0 +1,1274 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "GridAPI Public REST API",
+    "version": "1.0.0",
+    "description": "Canonical contract for the public GridAPI data API. Derived by inspection\nfrom the `gridapi_server` implementation (Fastify, working tree 2026-11-21).\nThis file is the single source of truth for all official SDKs. It documents\nonly behaviour that exists in the backend; no endpoint or parameter here is\nspeculative.\n\nOne account-level API key authenticates every project the account owns or\nhas membership in. The project slug is a routing/authorization target,\nnever a credential.\n",
+    "contact": {
+      "name": "GridAPI",
+      "url": "https://gridapi.in"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/licenses/MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.gridapi.in",
+      "description": "Production"
+    },
+    {
+      "url": "http://localhost:4000",
+      "description": "Local development"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Records",
+      "description": "CRUD operations on a project's sheet/endpoint."
+    },
+    {
+      "name": "Discovery",
+      "description": "Key-authenticated reads that consume no quota."
+    },
+    {
+      "name": "Metadata",
+      "description": "Key-free capability and documentation reads."
+    }
+  ],
+  "paths": {
+    "/api/v1/{projectSlug}/{endpoint}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectSlug"
+        },
+        {
+          "$ref": "#/components/parameters/Endpoint"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Records"
+        ],
+        "operationId": "listRecords",
+        "summary": "List rows of a table",
+        "description": "Consumes one quota unit. `filter`, `limit` and `page` are honoured.\n`search`, `sort` and `order` are accepted for backwards compatibility\nbut are ignored for the live Google Sheets data source — do not rely on\nthem for ordering or text search.\n",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Filter"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/Search"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Order"
+          },
+          {
+            "$ref": "#/components/parameters/Format"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rows and pagination metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AuthorizationError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ProjectOrTableNotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Records"
+        ],
+        "operationId": "createRecords",
+        "summary": "Insert one or more rows",
+        "description": "Non-idempotent. Clients must not automatically retry this operation.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Record"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Record"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Inserted rows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AuthorizationError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ProjectOrTableNotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamError"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Records"
+        ],
+        "operationId": "updateRecordsByFilter",
+        "summary": "Update rows matching a filter",
+        "description": "Idempotent. The filter is passed in the `x-filter` header as\n`column:value` pairs separated by commas.\n",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FilterHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Record"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated row",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AuthorizationError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ProjectOrTableNotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Records"
+        ],
+        "operationId": "deleteRecordsByFilter",
+        "summary": "Delete a row matching a filter",
+        "description": "Idempotent. Filter is supplied in the `x-filter` header.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FilterHeader"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted identifier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AuthorizationError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ProjectOrTableNotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/{projectSlug}/{endpoint}/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectSlug"
+        },
+        {
+          "$ref": "#/components/parameters/Endpoint"
+        },
+        {
+          "$ref": "#/components/parameters/RecordId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Records"
+        ],
+        "operationId": "getRecord",
+        "summary": "Fetch a single record by primary key",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Record"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AuthorizationError"
+          },
+          "404": {
+            "$ref": "#/components/responses/RecordNotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamError"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Records"
+        ],
+        "operationId": "patchRecord",
+        "summary": "Partially update a record by primary key",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Record"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AuthorizationError"
+          },
+          "404": {
+            "$ref": "#/components/responses/RecordNotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Records"
+        ],
+        "operationId": "replaceRecord",
+        "summary": "Replace a record by primary key",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Record"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AuthorizationError"
+          },
+          "404": {
+            "$ref": "#/components/responses/RecordNotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Records"
+        ],
+        "operationId": "deleteRecord",
+        "summary": "Delete a record by primary key",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted identifier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AuthorizationError"
+          },
+          "404": {
+            "$ref": "#/components/responses/RecordNotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "tags": [
+          "Discovery"
+        ],
+        "operationId": "getMe",
+        "summary": "Authenticated account and subscription",
+        "description": "Bearer key required; consumes no quota.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account identity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          }
+        }
+      }
+    },
+    "/api/v1/me/projects": {
+      "get": {
+        "tags": [
+          "Discovery"
+        ],
+        "operationId": "listProjects",
+        "summary": "Projects the account owns or is a member of",
+        "description": "Bearer key required; consumes no quota. Includes each project's sheets/tables.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized projects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          }
+        }
+      }
+    },
+    "/api/v1/me/usage": {
+      "get": {
+        "tags": [
+          "Discovery"
+        ],
+        "operationId": "getUsage",
+        "summary": "Current account API usage and remaining quota",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Usage report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          }
+        }
+      }
+    },
+    "/api/v1/me/projects/{projectRef}/docs": {
+      "get": {
+        "tags": [
+          "Discovery"
+        ],
+        "operationId": "getProjectDocs",
+        "summary": "Generated documentation and schema for a project",
+        "description": "Bearer key required; consumes no quota. The `endpoints` array contains\neach table's columns, primary key and allowed methods — this is the\nschema source used by `getSchema`.\n",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "projectRef",
+            "in": "path",
+            "required": true,
+            "description": "Project id or slug",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project documentation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDocs"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ProjectOrTableNotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/capabilities": {
+      "get": {
+        "tags": [
+          "Metadata"
+        ],
+        "operationId": "getCapabilities",
+        "summary": "Provider capability report",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Capability report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/public-docs/{slug}/{endpoint}": {
+      "get": {
+        "tags": [
+          "Metadata"
+        ],
+        "operationId": "getPublicDocs",
+        "summary": "Public documentation for a project endpoint",
+        "security": [],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Endpoint"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Generated documentation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDocs"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/ProjectOrTableNotFound"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "account API key (gp_live_…) or legacy project key (gapi_live_…)",
+        "description": "Send `Authorization: Bearer <key>`. The key is an account-level secret.\nThe project slug in the URL is not a credential.\n"
+      }
+    },
+    "parameters": {
+      "ProjectSlug": {
+        "name": "projectSlug",
+        "in": "path",
+        "required": true,
+        "description": "Project id or slug. Authorization target only — never a credential.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Endpoint": {
+        "name": "endpoint",
+        "in": "path",
+        "required": true,
+        "description": "Configured table endpoint (SheetResource.endpoint), not a raw sheet name.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "RecordId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Value of the table's configured primary key.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Filter": {
+        "name": "filter",
+        "in": "query",
+        "required": false,
+        "description": "Exact-match filters as `column:value` pairs separated by commas.",
+        "schema": {
+          "type": "string"
+        },
+        "example": "status:active,team:growth"
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "description": "Page size, clamped to 1-100 on the server. Default 100.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 100
+        }
+      },
+      "Page": {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "description": "1-based page number. Offset is applied only when both page and limit are supplied.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "Search": {
+        "name": "search",
+        "in": "query",
+        "required": false,
+        "description": "Accepted for compatibility; ignored for live Google Sheets data.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Sort": {
+        "name": "sort",
+        "in": "query",
+        "required": false,
+        "description": "Accepted for compatibility; ignored for live Google Sheets data.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Order": {
+        "name": "order",
+        "in": "query",
+        "required": false,
+        "description": "Accepted for compatibility; ignored for live Google Sheets data.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        }
+      },
+      "Format": {
+        "name": "format",
+        "in": "query",
+        "required": false,
+        "description": "Response serialization. The Accept application/xml header has the same effect.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "json",
+            "xml"
+          ],
+          "default": "json"
+        }
+      },
+      "FilterHeader": {
+        "name": "x-filter",
+        "in": "header",
+        "required": true,
+        "description": "Exact-match filter for collection PUT/DELETE as `column:value` pairs.",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "schemas": {
+      "Record": {
+        "type": "object",
+        "description": "A row. Keys are sheet header names; values are strings or null.",
+        "additionalProperties": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "example": {
+          "id": "u_1",
+          "name": "Ann",
+          "email": "ann@example.com"
+        }
+      },
+      "ListMeta": {
+        "type": "object",
+        "required": [
+          "total",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "total": {
+            "type": "integer",
+            "description": "Total number of matching rows."
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "cacheHit": {
+            "type": "boolean",
+            "description": "Present only when the response was served from cache."
+          }
+        }
+      },
+      "ListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Record"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ListMeta"
+          }
+        }
+      },
+      "CreateResponse": {
+        "type": "object",
+        "required": [
+          "inserted",
+          "records"
+        ],
+        "properties": {
+          "inserted": {
+            "type": "integer"
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Record"
+            }
+          }
+        }
+      },
+      "UpdateResponse": {
+        "type": "object",
+        "required": [
+          "updated",
+          "record"
+        ],
+        "properties": {
+          "updated": {
+            "type": "integer"
+          },
+          "record": {
+            "$ref": "#/components/schemas/Record"
+          }
+        }
+      },
+      "DeleteResponse": {
+        "type": "object",
+        "required": [
+          "deleted",
+          "id"
+        ],
+        "properties": {
+          "deleted": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "description": "Present on middleware/discovery errors. The public CRUD catch block\ndeliberately strips `code`, so SDKs must not depend on it there.\n"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "SheetDto": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sheetName": {
+            "type": "string"
+          },
+          "primaryKey": {
+            "type": "string"
+          },
+          "allowedMethods": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "getAllowed": {
+            "type": "boolean"
+          },
+          "postAllowed": {
+            "type": "boolean"
+          },
+          "putAllowed": {
+            "type": "boolean"
+          },
+          "patchAllowed": {
+            "type": "boolean"
+          },
+          "deleteAllowed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "ProjectDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "spreadsheetId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sheets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SheetDto"
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "MeResponse": {
+        "type": "object",
+        "properties": {
+          "authenticated": {
+            "type": "boolean"
+          },
+          "account": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "subscription": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "ProjectsResponse": {
+        "type": "object",
+        "required": [
+          "projects"
+        ],
+        "properties": {
+          "projects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectDto"
+            }
+          }
+        }
+      },
+      "UsageResponse": {
+        "type": "object",
+        "description": "Account usage report; fields follow the subscription model.",
+        "additionalProperties": true
+      },
+      "ProjectDocs": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "dataSource": {
+            "type": "string"
+          },
+          "endpoints": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "endpoint": {
+                  "type": "string"
+                },
+                "method": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                },
+                "primaryKey": {
+                  "type": "string"
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "samples": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "authentication": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "responses": {
+      "AuthenticationError": {
+        "description": "Missing, invalid or expired API key",
+        "headers": {
+          "WWW-Authenticate": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "missing": {
+                "value": {
+                  "error": "Missing API key"
+                }
+              },
+              "invalid": {
+                "value": {
+                  "error": "Invalid API key",
+                  "code": "INVALID_API_KEY"
+                }
+              },
+              "expired": {
+                "value": {
+                  "error": "API key expired",
+                  "code": "EXPIRED_API_KEY"
+                }
+              }
+            }
+          }
+        }
+      },
+      "AuthorizationError": {
+        "description": "Forbidden project, mismatch, or insufficient role",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "forbidden": {
+                "value": {
+                  "error": "Project forbidden",
+                  "code": "PROJECT_FORBIDDEN"
+                }
+              },
+              "role": {
+                "value": {
+                  "error": "Insufficient role",
+                  "code": "INSUFFICIENT_ROLE"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ProjectOrTableNotFound": {
+        "description": "Project, spreadsheet, sheet or record not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "project": {
+                "value": {
+                  "error": "Project not found",
+                  "code": "PROJECT_NOT_FOUND"
+                }
+              },
+              "table": {
+                "value": {
+                  "error": "Sheet not found"
+                }
+              }
+            }
+          }
+        }
+      },
+      "RecordNotFound": {
+        "description": "Record not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "Record not found",
+              "code": "NOT_FOUND"
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "description": "Invalid payload, column or value",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Either short-window rate limiting (@fastify/rate-limit, emits Retry-After)\nor exhausted subscription quota (`code: SUBSCRIPTION_LIMIT_REACHED`, which\nis terminal and must not be retried).\n",
+        "headers": {
+          "Retry-After": {
+            "description": "Present for short-window limits, not for quota exhaustion.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "quota": {
+                "value": {
+                  "code": "SUBSCRIPTION_LIMIT_REACHED",
+                  "message": "API call limit exceeded"
+                }
+              }
+            }
+          }
+        }
+      },
+      "UpstreamError": {
+        "description": "Google provider failure",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "Google API request failed",
+              "code": "GOOGLE_SHEETS_ERROR"
+            }
+          }
+        }
+      },
+      "ServerError": {
+        "description": "Unexpected server error (missing filter, empty payload, etc.)",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    }
+  }
+}

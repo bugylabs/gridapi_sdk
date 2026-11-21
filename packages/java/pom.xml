@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.gridapi</groupId>
+  <artifactId>gridapi-sdk</artifactId>
+  <version>0.1.0</version>
+  <packaging>jar</packaging>
+
+  <name>GridAPI Java SDK</name>
+  <description>Official Java client for the GridAPI public REST API</description>
+  <url>https://github.com/gridapi/gridapi_sdk</url>
+
+  <licenses>
+    <license>
+      <name>MIT</name>
+      <url>https://opensource.org/licenses/MIT</url>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <name>GridAPI</name>
+      <url>https://gridapi.in</url>
+    </developer>
+  </developers>
+
+  <scm>
+    <url>https://github.com/gridapi/gridapi_sdk</url>
+    <connection>scm:git:https://github.com/gridapi/gridapi_sdk.git</connection>
+    <developerConnection>scm:git:git@github.com:gridapi/gridapi_sdk.git</developerConnection>
+  </scm>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>21</maven.compiler.release>
+  </properties>
+
+  <!-- Intentionally no <dependencies>: the SDK uses only the JDK. -->
+</project>

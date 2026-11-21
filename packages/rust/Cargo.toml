@@ -1,0 +1,18 @@
+[package]
+name = "gridapi-sdk"
+version = "0.1.0"
+edition = "2021"
+description = "Official Rust SDK for the GridAPI public REST API"
+license = "MIT"
+repository = "https://github.com/gridapi/gridapi_sdk"
+homepage = "https://gridapi.in"
+documentation = "https://docs.rs/gridapi-sdk"
+readme = "README.md"
+keywords = ["api", "sdk", "spreadsheet", "google-sheets", "gridapi"]
+categories = ["api-bindings"]
+
+[dependencies]
+# ureq's "tls" feature uses rustls (via ring); gzip and other extras are off.
+ureq = { version = "2", default-features = false, features = ["tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

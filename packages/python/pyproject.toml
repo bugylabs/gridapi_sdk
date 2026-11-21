@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gridapi-sdk"
+version = "1.0.0"
+description = "Official Python SDK for the GridAPI public REST API"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+
+[tool.setuptools]
+packages = ["gridapi"]
