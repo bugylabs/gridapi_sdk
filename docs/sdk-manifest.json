@@ -8,22 +8,101 @@
     "baseUrlEnv": "GRIDAPI_BASE_URL",
     "timeoutEnv": "GRIDAPI_TIMEOUT_MS",
     "authHeader": "Authorization: Bearer <key>",
-    "note": "The key is account-level. A project slug is a routing/authorization target, never a credential."
+    "note": "The key is account-level. A project slug is a routing/authorization target, never a credential.",
+    "license": "BugyLabs Proprietary Non-Commercial License"
   },
   "operations": [
-    { "name": "get", "operationId": "listRecords", "http": "GET", "path": "/api/v1/{projectSlug}/{endpoint}", "summary": "Retrieve records" },
-    { "name": "getById", "operationId": "getRecord", "http": "GET", "path": "/api/v1/{projectSlug}/{endpoint}/{id}", "summary": "Retrieve one record by primary key" },
-    { "name": "post", "operationId": "createRecords", "http": "POST", "path": "/api/v1/{projectSlug}/{endpoint}", "summary": "Insert a record or records" },
-    { "name": "patch", "operationId": "patchRecord", "http": "PATCH", "path": "/api/v1/{projectSlug}/{endpoint}/{id}", "summary": "Partially update a record" },
-    { "name": "put", "operationId": "replaceRecord", "http": "PUT", "path": "/api/v1/{projectSlug}/{endpoint}/{id}", "summary": "Replace a record" },
-    { "name": "delete", "operationId": "deleteRecord", "http": "DELETE", "path": "/api/v1/{projectSlug}/{endpoint}/{id}", "summary": "Delete a record" },
-    { "name": "query", "operationId": "listRecords", "http": "GET", "path": "/api/v1/{projectSlug}/{endpoint}", "summary": "Filter and paginate records" },
-    { "name": "count", "operationId": "listRecords", "http": "GET", "path": "/api/v1/{projectSlug}/{endpoint}", "summary": "Count matching records via meta.total" },
-    { "name": "listProjects", "operationId": "listProjects", "http": "GET", "path": "/api/v1/me/projects", "summary": "Discover authorized projects" },
-    { "name": "listTables", "operationId": "listProjects", "http": "GET", "path": "/api/v1/me/projects", "summary": "Discover a project's tables from project sheets" },
-    { "name": "getSchema", "operationId": "getProjectDocs", "http": "GET", "path": "/api/v1/me/projects/{projectRef}/docs", "summary": "Retrieve table schema from generated project docs" },
-    { "name": "getMe", "operationId": "getMe", "http": "GET", "path": "/api/v1/me", "summary": "Authenticated account and subscription" },
-    { "name": "getUsage", "operationId": "getUsage", "http": "GET", "path": "/api/v1/me/usage", "summary": "Current account usage" }
+    {
+      "name": "get",
+      "operationId": "listRecords",
+      "http": "GET",
+      "path": "/api/v1/{projectSlug}/{endpoint}",
+      "summary": "Retrieve records"
+    },
+    {
+      "name": "getById",
+      "operationId": "getRecord",
+      "http": "GET",
+      "path": "/api/v1/{projectSlug}/{endpoint}/{id}",
+      "summary": "Retrieve one record by primary key"
+    },
+    {
+      "name": "post",
+      "operationId": "createRecords",
+      "http": "POST",
+      "path": "/api/v1/{projectSlug}/{endpoint}",
+      "summary": "Insert a record or records"
+    },
+    {
+      "name": "patch",
+      "operationId": "patchRecord",
+      "http": "PATCH",
+      "path": "/api/v1/{projectSlug}/{endpoint}/{id}",
+      "summary": "Partially update a record"
+    },
+    {
+      "name": "put",
+      "operationId": "replaceRecord",
+      "http": "PUT",
+      "path": "/api/v1/{projectSlug}/{endpoint}/{id}",
+      "summary": "Replace a record"
+    },
+    {
+      "name": "delete",
+      "operationId": "deleteRecord",
+      "http": "DELETE",
+      "path": "/api/v1/{projectSlug}/{endpoint}/{id}",
+      "summary": "Delete a record"
+    },
+    {
+      "name": "query",
+      "operationId": "listRecords",
+      "http": "GET",
+      "path": "/api/v1/{projectSlug}/{endpoint}",
+      "summary": "Filter and paginate records"
+    },
+    {
+      "name": "count",
+      "operationId": "listRecords",
+      "http": "GET",
+      "path": "/api/v1/{projectSlug}/{endpoint}",
+      "summary": "Count matching records via meta.total"
+    },
+    {
+      "name": "listProjects",
+      "operationId": "listProjects",
+      "http": "GET",
+      "path": "/api/v1/me/projects",
+      "summary": "Discover authorized projects"
+    },
+    {
+      "name": "listTables",
+      "operationId": "listProjects",
+      "http": "GET",
+      "path": "/api/v1/me/projects",
+      "summary": "Discover a project's tables from project sheets"
+    },
+    {
+      "name": "getSchema",
+      "operationId": "getProjectDocs",
+      "http": "GET",
+      "path": "/api/v1/me/projects/{projectRef}/docs",
+      "summary": "Retrieve table schema from generated project docs"
+    },
+    {
+      "name": "getMe",
+      "operationId": "getMe",
+      "http": "GET",
+      "path": "/api/v1/me",
+      "summary": "Authenticated account and subscription"
+    },
+    {
+      "name": "getUsage",
+      "operationId": "getUsage",
+      "http": "GET",
+      "path": "/api/v1/me/usage",
+      "summary": "Current account usage"
+    }
   ],
   "unsupported": [
     "Server-side sorting and text search are accepted but ignored on the live Google Sheets data source; SDKs must not implement them client-side.",
@@ -36,11 +115,12 @@
       "package": "@gridapi/sdk",
       "registry": "npm",
       "install": "npm install @gridapi/sdk",
-      "source": "https://github.com/gridapi/gridapi_sdk/tree/main/packages/javascript",
+      "source": "https://github.com/bugylabs/gridapi-sdk/tree/main/packages/javascript",
       "registryUrl": "https://www.npmjs.com/package/@gridapi/sdk",
       "class": "GridApiClient",
       "exportStyle": "named",
-      "sourceFile": "packages/javascript/src/index.ts"
+      "sourceFile": "packages/javascript/src/index.ts",
+      "quickstart": "import { GridApiClient } from \"@gridapi/sdk\";\n\n// Reads GRIDAPI_API_KEY from the environment. Server-side only.\nconst api = new GridApiClient();\n\nconst account = await api.getMe();\nconsole.log(\"Authenticated:\", account.authenticated);\n\nconst { data, meta } = await api.get(\"acme\", \"users\", {\n  filter: \"status:active\",\n  limit: 25,\n});\nconsole.log(`Active users: ${data.length} of ${meta.total}`);\n\nconst created = await api.post(\"acme\", \"users\", { name: \"Ada\", status: \"active\" });\nconst id = created.records[0].id;\nawait api.patch(\"acme\", \"users\", id, { status: \"invited\" });"
     },
     {
       "id": "python",
@@ -48,23 +128,25 @@
       "package": "gridapi-sdk",
       "registry": "PyPI",
       "install": "pip install gridapi-sdk",
-      "source": "https://github.com/gridapi/gridapi_sdk/tree/main/packages/python",
+      "source": "https://github.com/bugylabs/gridapi-sdk/tree/main/packages/python",
       "registryUrl": "https://pypi.org/project/gridapi-sdk/",
       "class": "GridApiClient",
       "exportStyle": "named",
-      "sourceFile": "packages/python/gridapi/__init__.py"
+      "sourceFile": "packages/python/gridapi/__init__.py",
+      "quickstart": "from gridapi import GridApiClient\n\nclient = GridApiClient()  # reads GRIDAPI_API_KEY from the environment\n\n# Discovery: which projects and tables can this key reach?\nfor project in client.list_projects():\n    print(project[\"slug\"])\n\ntables = client.list_tables(\"acme\")\nprint([table[\"endpoint\"] for table in tables])\n\n# Read a page of filtered records.\npage = client.get(\"acme\", \"users\", {\"filter\": {\"status\": \"active\"}, \"limit\": 10, \"page\": 1})\nfor row in page[\"data\"]:\n    print(row[\"id\"], row[\"name\"])\nprint(\"total matching:\", page[\"meta\"][\"total\"])\n\n# Read one record, then create / update / delete a throwaway record.\none = client.get_by_id(\"acme\", \"users\", \"1\")\ncreated = client.post(\"acme\", \"users\", {\"name\": \"Dee\", \"status\": \"active\", \"team\": \"core\"})\nnew_id = created[\"records\"][0][\"id\"]\nclient.patch(\"acme\", \"users\", new_id, {\"status\": \"invited\"})\nclient.put(\"acme\", \"users\", new_id, {\"name\": \"Dee\", \"status\": \"active\", \"team\": \"core\"})\nclient.delete(\"acme\", \"users\", new_id)\n\nprint(\"matching count:\", client.count(\"acme\", \"users\", filter={\"status\": \"active\"}))"
     },
     {
       "id": "java",
       "label": "Java",
       "package": "io.gridapi:gridapi-sdk",
       "registry": "Maven Central",
-      "install": "<dependency><groupId>io.gridapi</groupId><artifactId>gridapi-sdk</artifactId><version>0.1.0</version></dependency>",
-      "source": "https://github.com/gridapi/gridapi_sdk/tree/main/packages/java",
+      "install": "<dependency><groupId>io.gridapi</groupId><artifactId>gridapi-sdk</artifactId><version>1.0.0</version></dependency>",
+      "source": "https://github.com/bugylabs/gridapi-sdk/tree/main/packages/java",
       "registryUrl": "https://central.sonatype.com/artifact/io.gridapi/gridapi-sdk",
       "class": "GridApiClient",
       "exportStyle": "class",
-      "sourceFile": "packages/java/src/main/java/io/gridapi/GridApiClient.java"
+      "sourceFile": "packages/java/src/main/java/io/gridapi/GridApiClient.java",
+      "quickstart": "import io.gridapi.CreateResponse;\nimport io.gridapi.GridApiClient;\nimport io.gridapi.GridRecord;\nimport io.gridapi.ListResponse;\nimport io.gridapi.QueryOptions;\n\nimport java.util.Map;\n\npublic final class Quickstart {\n    public static void main(String[] args) {\n        GridApiClient client = new GridApiClient(); // reads GRIDAPI_* env vars\n\n        ListResponse<GridRecord> users = client.get(\"acme\", \"users\",\n            new QueryOptions(\"status:active\", 1, 10));\n        System.out.println(\"total active users: \" + users.meta().total());\n        for (GridRecord row : users.data()) {\n            System.out.println(row.get(\"id\") + \" -> \" + row.get(\"name\"));\n        }\n\n        int allUsers = client.count(\"acme\", \"users\");\n        CreateResponse<GridRecord> created = client.post(\"acme\", \"users\",\n            Map.of(\"name\", \"New User\", \"status\", \"active\"));\n        System.out.println(\"inserted: \" + created.inserted());\n\n        client.delete(\"acme\", \"users\", created.records().get(0).get(\"id\"));\n    }\n}"
     },
     {
       "id": "dotnet",
@@ -72,23 +154,25 @@
       "package": "GridAPI",
       "registry": "NuGet",
       "install": "dotnet add package GridAPI",
-      "source": "https://github.com/gridapi/gridapi_sdk/tree/main/packages/dotnet",
+      "source": "https://github.com/bugylabs/gridapi-sdk/tree/main/packages/dotnet",
       "registryUrl": "https://www.nuget.org/packages/GridAPI/",
       "class": "GridApiClient",
       "exportStyle": "class",
-      "sourceFile": "packages/dotnet/GridAPI/GridApiClient.cs"
+      "sourceFile": "packages/dotnet/GridAPI/GridApiClient.cs",
+      "quickstart": "using GridAPI;\n\nusing var client = new GridApiClient(); // reads GRIDAPI_API_KEY from the environment\n\nvar projects = await client.ListProjectsAsync();\nforeach (var project in projects)\n    Console.WriteLine($\"{project.Slug}: {project.Sheets.Count} tables\");\n\nvar page = await client.GetAsync(\"acme\", \"users\", new QueryOptions { Limit = 10 });\nConsole.WriteLine($\"{page.Data.Count} of {page.Meta.Total} users on this page\");"
     },
     {
       "id": "go",
       "label": "Go",
-      "package": "github.com/gridapi/gridapi-go",
+      "package": "github.com/bugylabs/gridapi-sdk",
       "registry": "Go modules",
-      "install": "go get github.com/gridapi/gridapi-go",
-      "source": "https://github.com/gridapi/gridapi_sdk/tree/main/packages/go",
-      "registryUrl": "https://pkg.go.dev/github.com/gridapi/gridapi-go",
+      "install": "go get github.com/bugylabs/gridapi-sdk",
+      "source": "https://github.com/bugylabs/gridapi-sdk/tree/main/packages/go",
+      "registryUrl": "https://pkg.go.dev/github.com/bugylabs/gridapi-sdk",
       "class": "Client",
       "exportStyle": "struct",
-      "sourceFile": "packages/go/gridapi.go"
+      "sourceFile": "packages/go/gridapi.go",
+      "quickstart": "package main\n\nimport (\n    \"context\"\n    \"fmt\"\n    \"log\"\n    \"time\"\n\n    gridapi \"github.com/bugylabs/gridapi-sdk/packages/go\"\n)\n\nfunc main() {\n    client, err := gridapi.NewClient() // reads GRIDAPI_API_KEY\n    if err != nil {\n        log.Fatal(err)\n    }\n\n    ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)\n    defer cancel()\n\n    res, err := client.Get(ctx, \"acme\", \"users\", &gridapi.QueryOptions{Limit: 10, Page: 1})\n    if err != nil {\n        log.Fatal(err)\n    }\n    for _, row := range res.Data {\n        fmt.Println(row[\"id\"], row[\"name\"])\n    }\n    fmt.Println(\"total:\", res.Meta.Total)\n}"
     },
     {
       "id": "rust",
@@ -96,11 +180,12 @@
       "package": "gridapi-sdk",
       "registry": "crates.io",
       "install": "cargo add gridapi-sdk",
-      "source": "https://github.com/gridapi/gridapi_sdk/tree/main/packages/rust",
+      "source": "https://github.com/bugylabs/gridapi-sdk/tree/main/packages/rust",
       "registryUrl": "https://crates.io/crates/gridapi-sdk",
       "class": "Client",
       "exportStyle": "struct",
-      "sourceFile": "packages/rust/src/lib.rs"
+      "sourceFile": "packages/rust/src/lib.rs",
+      "quickstart": "use gridapi_sdk::{Client, GridRecord, QueryOptions};\n\nfn main() -> Result<(), gridapi_sdk::GridError> {\n    // Reads GRIDAPI_API_KEY, GRIDAPI_BASE_URL, GRIDAPI_TIMEOUT_MS from the env.\n    let client = Client::from_env()?;\n\n    let options = QueryOptions {\n        filter: Some(\"status:active\".into()),\n        limit: Some(10),\n        ..Default::default()\n    };\n    let page = client.get(\"acme\", \"users\", &options)?;\n    println!(\"{} of {} rows\", page.data.len(), page.meta.total);\n\n    let mut row = GridRecord::new();\n    row.insert(\"name\".into(), Some(\"Ann\".into()));\n    row.insert(\"email\".into(), Some(\"ann@example.com\".into()));\n    let created = client.post(\"acme\", \"users\", &[row])?;\n    println!(\"inserted {} record(s)\", created.inserted);\n\n    Ok(())\n}"
     }
   ]
 }

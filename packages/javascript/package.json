@@ -1,11 +1,13 @@
 {
   "name": "@gridapi/sdk",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Official TypeScript/JavaScript SDK for the GridAPI REST API",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "sideEffects": false,
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
   "types": "./dist/index.d.ts",
@@ -16,7 +18,11 @@
       "require": "./dist/cjs/index.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/finalize.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -24,5 +30,18 @@
   },
   "devDependencies": {
     "typescript": "^5.7.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bugylabs/gridapi-sdk.git",
+    "directory": "packages/javascript"
+  },
+  "homepage": "https://github.com/bugylabs/gridapi-sdk/tree/main/packages/javascript#readme",
+  "bugs": {
+    "url": "https://github.com/bugylabs/gridapi-sdk/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

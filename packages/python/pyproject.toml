@@ -8,7 +8,20 @@ version = "1.0.0"
 description = "Official Python SDK for the GridAPI public REST API"
 readme = "README.md"
 requires-python = ">=3.8"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
+authors = [{ name = "BugyLabs" }]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "License :: Other/Proprietary License",
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/bugylabs/gridapi-sdk/tree/main/packages/python"
+Repository = "https://github.com/bugylabs/gridapi-sdk"
+Issues = "https://github.com/bugylabs/gridapi-sdk/issues"
 
 [tool.setuptools]
 packages = ["gridapi"]

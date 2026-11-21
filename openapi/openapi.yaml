@@ -4,7 +4,7 @@ info:
   version: "1.0.0"
   description: |
     Canonical contract for the public GridAPI data API. Derived by inspection
-    from the `gridapi_server` implementation (Fastify, working tree 2026-11-21).
+    the published GridAPI REST contract (Fastify, v1.0.0).
     This file is the single source of truth for all official SDKs. It documents
     only behaviour that exists in the backend; no endpoint or parameter here is
     speculative.
@@ -16,8 +16,8 @@ info:
     name: GridAPI
     url: https://gridapi.in
   license:
-    name: MIT
-    url: https://opensource.org/licenses/MIT
+    name: BugyLabs Proprietary Non-Commercial License
+    url: https://github.com/bugylabs/gridapi-sdk/blob/main/LICENSE
 servers:
   - url: https://api.gridapi.in
     description: Production

@@ -3,14 +3,14 @@
   "info": {
     "title": "GridAPI Public REST API",
     "version": "1.0.0",
-    "description": "Canonical contract for the public GridAPI data API. Derived by inspection\nfrom the `gridapi_server` implementation (Fastify, working tree 2026-11-21).\nThis file is the single source of truth for all official SDKs. It documents\nonly behaviour that exists in the backend; no endpoint or parameter here is\nspeculative.\n\nOne account-level API key authenticates every project the account owns or\nhas membership in. The project slug is a routing/authorization target,\nnever a credential.\n",
+    "description": "Canonical contract for the public GridAPI data API. Derived by inspection\nthe published GridAPI REST contract (Fastify, v1.0.0).\nThis file is the single source of truth for all official SDKs. It documents\nonly behaviour that exists in the backend; no endpoint or parameter here is\nspeculative.\n\nOne account-level API key authenticates every project the account owns or\nhas membership in. The project slug is a routing/authorization target,\nnever a credential.\n",
     "contact": {
       "name": "GridAPI",
       "url": "https://gridapi.in"
     },
     "license": {
-      "name": "MIT",
-      "url": "https://opensource.org/licenses/MIT"
+      "name": "BugyLabs Proprietary Non-Commercial License",
+      "url": "https://github.com/bugylabs/gridapi-sdk/blob/main/LICENSE"
     }
   },
   "servers": [

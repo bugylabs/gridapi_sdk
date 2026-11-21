@@ -1,3 +1,3 @@
-module github.com/gridapi/gridapi-go
+module github.com/bugylabs/gridapi-sdk
 
 go 1.22

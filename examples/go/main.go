@@ -16,7 +16,7 @@ import (
 	"os"
 	"time"
 
-	gridapi "github.com/gridapi/gridapi-go/packages/go"
+	gridapi "github.com/bugylabs/gridapi-sdk/packages/go"
 )
 
 func main() {

@@ -2,11 +2,23 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <PackageId>GridAPI</PackageId>
-    <Version>0.1.0</Version>
-    <Authors>GridAPI</Authors>
+    <Version>1.0.0</Version>
+    <Authors>BugyLabs</Authors>
+    <Company>BugyLabs</Company>
+    <PackageProjectUrl>https://github.com/bugylabs/gridapi-sdk/tree/main/packages/dotnet</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/bugylabs/gridapi-sdk.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>gridapi;sdk;spreadsheet</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CS1587</NoWarn>
     <Description>Official server-side .NET SDK for the GridAPI public REST API.</Description>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+  <ItemGroup>
+    <None Include="../../../LICENSE" Pack="true" PackagePath="" />
+    <None Include="../README.md" Pack="true" PackagePath="" />
+  </ItemGroup>
 </Project>
