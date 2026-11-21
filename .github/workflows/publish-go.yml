@@ -1,0 +1,62 @@
+name: Publish Go SDK (Go Modules)
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Semantic version to release (must match the v* tag)'
+        required: true
+      release_type:
+        description: 'Release type'
+        required: true
+        default: stable
+        type: choice
+        options: [stable, prerelease]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: go-production
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with: { 'go-version': '1.24' }
+      - name: Resolve and validate version
+        id: ver
+        run: |
+          V="${{ inputs.version }}"
+          if [ -z "$V" ]; then V="${GITHUB_REF_NAME}"; fi
+          case "$V" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "Invalid Go tag (expected vX.Y.Z): $V"; exit 1;; esac
+          MOD="$(go list -m)"
+          [ "$MOD" = "github.com/bugylabs/gridapi-sdk" ] || { echo "Unexpected module path: $MOD"; exit 1; }
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+      - name: Tidy, vet and test
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum || { echo "go.mod/go.sum not tidy"; exit 1; }
+          go vet ./...
+          go test ./...
+      - name: Verify tag resolves the published module version
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          for i in $(seq 1 12); do
+            if curl -fsS "https://proxy.golang.org/github.com/bugylabs/gridapi-sdk/@v/$V.info" | grep -q '"Version"'; then
+              echo "Verified on proxy.golang.org"; curl -fsS "https://pkg.go.dev/github.com/bugylabs/gridapi-sdk@$V" -o /dev/null || true; exit 0
+            fi
+            sleep 10
+          done
+          echo "Go module verification timed out"; exit 1
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ steps.ver.outputs.version }}
+          name: Go SDK ${{ steps.ver.outputs.version }}
+          prerelease: ${{ inputs.release_type == 'prerelease' }}
+          body: 'Go module github.com/bugylabs/gridapi-sdk ${{ steps.ver.outputs.version }}. Go publishes from the Git tag; no registry upload.'

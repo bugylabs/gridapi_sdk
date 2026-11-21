@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      javascript: ${{ steps.filter.outputs.javascript }}
+      python: ${{ steps.filter.outputs.python }}
+      java: ${{ steps.filter.outputs.java }}
+      dotnet: ${{ steps.filter.outputs.dotnet }}
+      go: ${{ steps.filter.outputs.go }}
+      rust: ${{ steps.filter.outputs.rust }}
+      shared: ${{ steps.filter.outputs.shared }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3
+        id: filter
+        with:
+          filters: |
+            shared:
+              - 'openapi/**'
+              - 'docs/sdk-manifest.json'
+              - 'scripts/**'
+              - 'tests/contract/mock-server.mjs'
+              - '.github/workflows/**'
+            javascript:
+              - 'packages/javascript/**'
+              - 'examples/javascript/**'
+              - 'tests/contract/javascript/**'
+            python:
+              - 'packages/python/**'
+              - 'examples/python/**'
+              - 'tests/contract/python/**'
+            java:
+              - 'packages/java/**'
+              - 'examples/java/**'
+              - 'tests/contract/java/**'
+            dotnet:
+              - 'packages/dotnet/**'
+              - 'examples/dotnet/**'
+              - 'tests/contract/dotnet/**'
+            go:
+              - 'go.mod'
+              - 'packages/go/**'
+              - 'examples/go/**'
+              - 'tests/contract/go/**'
+            rust:
+              - 'packages/rust/**'
+              - 'examples/rust/**'
+              - 'tests/contract/rust/**'
+
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: '3.12' }
+      - name: Validate canonical contract and SDK wiring
+        run: python3 scripts/validate_contract.py
+
+  javascript:
+    needs: [changes]
+    if: needs.changes.outputs.javascript == 'true' || needs.changes.outputs.shared == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'release'
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: packages/javascript } }
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with: { node-version: '24', package-manager-cache: false }
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  python:
+    needs: [changes]
+    if: needs.changes.outputs.python == 'true' || needs.changes.outputs.shared == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: '3.12' }
+      - run: PYTHONPATH=packages/python python3 -m unittest discover -s tests/contract/python -v
+
+  java:
+    needs: [changes]
+    if: needs.changes.outputs.java == 'true' || needs.changes.outputs.shared == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with: { distribution: temurin, 'java-version': '21', cache: maven }
+      - run: bash tests/contract/java/run.sh
+
+  dotnet:
+    needs: [changes]
+    if: needs.changes.outputs.dotnet == 'true' || needs.changes.outputs.shared == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with: { 'dotnet-version': '10.0.x' }
+      - run: dotnet run --project tests/contract/dotnet/GridApiContractTests.csproj -c Release
+
+  go:
+    needs: [changes]
+    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.shared == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with: { 'go-version': '1.24' }
+      - run: go mod tidy
+      - run: go vet ./...
+      - run: go test ./...
+
+  rust:
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.shared == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with: { components: rustfmt, clippy }
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --all-targets

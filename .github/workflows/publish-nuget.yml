@@ -1,0 +1,72 @@
+name: Publish .NET SDK (NuGet)
+
+on:
+  push:
+    tags: ['dotnet-v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Semantic version to publish (must match GridAPI.csproj)'
+        required: true
+      release_type:
+        description: 'Release type'
+        required: true
+        default: stable
+        type: choice
+        options: [stable, prerelease]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: nuget-production
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with: { 'dotnet-version': '10.0.x' }
+      - name: Resolve and validate version
+        id: ver
+        run: |
+          V="${{ inputs.version }}"
+          if [ -z "$V" ]; then V="${GITHUB_REF_NAME#dotnet-v}"; fi
+          case "$V" in [0-9]*.[0-9]*.[0-9]*) ;; *) echo "Invalid semver: $V"; exit 1;; esac
+          PKG="$(python3 -c "import xml.etree.ElementTree as E;print(E.parse('packages/dotnet/GridAPI/GridAPI.csproj').findtext('Version'))")"
+          [ "$V" = "$PKG" ] || { echo "Tag/input $V != csproj $PKG"; exit 1; }
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+      - name: Restore, build and test
+        run: |
+          dotnet restore packages/dotnet/GridAPI/GridAPI.csproj
+          dotnet build packages/dotnet/GridAPI/GridAPI.csproj -c Release --no-restore
+          dotnet run --project tests/contract/dotnet/GridApiContractTests.csproj -c Release
+      - name: Pack and inspect package
+        run: |
+          dotnet pack packages/dotnet/GridAPI/GridAPI.csproj -c Release -o artifacts --no-restore
+          python3 -c "import zipfile,glob; z=zipfile.ZipFile(glob.glob('artifacts/*.nupkg')[0]); n=z.namelist(); assert any(x.lower().startswith('license') for x in n), n; assert any(x.lower().startswith('readme') for x in n), n; print('nupkg contents OK')"
+      - uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+        id: nuget
+        with:
+          user: ${{ secrets.NUGET_USER }}
+      - name: Publish to NuGet
+        run: dotnet nuget push "artifacts/*.nupkg" --source https://api.nuget.org/v3/index.json --api-key "${{ steps.nuget.outputs.NUGET_API_KEY }}" --skip-duplicate
+      - name: Verify published version
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          for i in $(seq 1 12); do
+            if curl -fsS -o /dev/null "https://api.nuget.org/v3-flatcontainer/gridapi/$V/gridapi.$V.nupkg"; then
+              echo "Verified on NuGet"; exit 0
+            fi
+            sleep 10
+          done
+          echo "Publication verification timed out"; exit 1
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: dotnet-v${{ steps.ver.outputs.version }}
+          name: .NET SDK v${{ steps.ver.outputs.version }}
+          prerelease: ${{ inputs.release_type == 'prerelease' }}
+          body: '.NET SDK v${{ steps.ver.outputs.version }} published to NuGet as GridAPI.'
