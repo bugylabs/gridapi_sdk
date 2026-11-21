@@ -1,0 +1,77 @@
+BUGYLABS PROPRIETARY NON-COMMERCIAL SOFTWARE LICENSE
+
+Copyright (c) 2026 BugyLabs. All Rights Reserved.
+
+Source Available | Proprietary | Non-Commercial Use Only
+
+This license governs the GridAPI SDK source code and related documentation
+(the "Software"). The Software is made available for source inspection and
+limited non-commercial use. It is NOT open source software and is NOT licensed
+under MIT, Apache, BSD, ISC, GPL, or any other open-source or OSI-approved
+license. No open-source rights are granted.
+
+1. PERMITTED USE
+
+BugyLabs grants you a limited, non-exclusive, non-transferable, revocable right
+to:
+
+  (a) use the Software for personal, educational, research, and non-commercial
+      evaluation purposes;
+  (b) inspect the source code for those purposes; and
+  (c) make internal, non-commercial modifications for those purposes, provided
+      that all copyright, trademark, and license notices remain intact.
+
+2. PROHIBITED USE
+
+You may NOT:
+
+  (a) use the Software, directly or indirectly, for any commercial purpose or
+      for the benefit of a commercial product or service without prior written
+      permission from BugyLabs;
+  (b) sell, rent, lease, sublicense, or otherwise transfer the Software or any
+      copy of it;
+  (c) distribute, publish, or commercially redistribute the Software or
+      derivative works, in source or compiled form, except as part of an
+      application you build for a permitted non-commercial use and only where
+      this license notice is preserved;
+  (d) offer the Software, or a product or service substantially equivalent to
+      it, as part of a competing commercial product or service;
+  (e) remove, alter, or conceal any copyright, trademark, or license notice;
+  (f) represent the Software as open source or as licensed under any
+      open-source license.
+
+3. COMMERCIAL LICENSING
+
+Any commercial use requires a separate written license agreement with
+BugyLabs. Contact: licensing@bugylabs.com (or the contact published at
+https://bugylabs.com). No commercial license is implied by access to this
+repository or by any registry package built from it.
+
+4. OWNERSHIP
+
+The Software is licensed, not sold. BugyLabs retains all right, title, and
+interest in the Software, including all intellectual property rights. No rights
+are granted except those expressly stated above.
+
+5. NO WARRANTY; LIMITATION OF LIABILITY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. TO THE MAXIMUM EXTENT
+PERMITTED BY LAW, BUGYLABS SHALL NOT BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR ITS USE.
+
+6. TERM AND TERMINATION
+
+This license terminates automatically if you breach any of its terms. Upon
+termination you must stop using and destroy all copies of the Software.
+
+7. MISCELLANEOUS
+
+This license is governed by the laws of the jurisdiction of BugyLabs, without
+regard to conflict-of-law rules. If any provision is held unenforceable, the
+remaining provisions remain in effect.
+
+LEGAL REVIEW REQUIRED BEFORE PUBLICATION: this is a custom license. Have
+qualified counsel review it for your jurisdiction and for the registry
+metadata of each package before the first public release.
