@@ -17,7 +17,7 @@ Maven:
 
 ```xml
 <dependency>
-  <groupId>io.gridapi</groupId>
+  <groupId>com.bugylabs</groupId>
   <artifactId>gridapi-sdk</artifactId>
   <version>1.0.0</version>
 </dependency>
@@ -26,7 +26,7 @@ Maven:
 Gradle:
 
 ```groovy
-implementation 'io.gridapi:gridapi-sdk:1.0.0'
+implementation 'com.bugylabs:gridapi-sdk:1.0.0'
 ```
 
 ## Features / supported operations

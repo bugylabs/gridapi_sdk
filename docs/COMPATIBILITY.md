@@ -7,7 +7,7 @@ All six SDKs target the same public contract: [openapi/openapi.yaml](../openapi/
 | --- | --- | --- | --- | --- | --- | --- |
 | TypeScript / JavaScript | `@gridapi/sdk` | 1.0.0 | Node.js 18+ (ESM + CJS, declaration files) | TypeScript (dev only) | Fetch / AbortController | `publish-npm.yml` |
 | Python | `gridapi-sdk` | 1.0.0 | Python 3.8+ | standard library only | `urllib.request` | `publish-pypi.yml` |
-| Java | `io.gridapi:gridapi-sdk` | 1.0.0 | Java 21 | JDK only | `java.net.http.HttpClient` | `publish-maven.yml` |
+| Java | `com.bugylabs:gridapi-sdk` | 1.0.0 | Java 21 | JDK only | `java.net.http.HttpClient` | `publish-maven.yml` |
 | .NET | `GridAPI` | 1.0.0 | .NET 10 | base class library only | `System.Net.Http.HttpClient` | `publish-nuget.yml` |
 | Go | `github.com/bugylabs/gridapi-sdk` | 1.0.0 | Go 1.22+ | standard library only | `net/http` | `publish-go.yml` |
 | Rust | `gridapi-sdk` | 1.0.0 | Rust 1.80+ (edition 2021) | `ureq` (rustls), `serde`, `serde_json` | `ureq` | `publish-rust.yml` |

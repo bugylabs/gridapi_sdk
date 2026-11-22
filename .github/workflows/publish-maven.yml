@@ -70,4 +70,4 @@ jobs:
           tag_name: java-v${{ steps.ver.outputs.version }}
           name: Java SDK v${{ steps.ver.outputs.version }}
           prerelease: ${{ inputs.release_type == 'prerelease' }}
-          body: 'Java SDK v${{ steps.ver.outputs.version }} published to Maven Central as io.gridapi:gridapi-sdk.'
+          body: 'Java SDK v${{ steps.ver.outputs.version }} published to Maven Central as com.bugylabs:gridapi-sdk.'

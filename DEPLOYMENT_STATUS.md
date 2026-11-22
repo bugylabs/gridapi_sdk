@@ -46,15 +46,15 @@ All checks below ran locally on 2026-11-21 and passed:
 - [ ] GitHub: environment `pypi-production`.
 - [ ] Next action: owner configures the trusted publisher, then pushes `python-v1.0.0` or dispatches the workflow. No PyPI token is stored.
 
-## Java — `io.gridapi:gridapi-sdk` → Maven Central (Central Publisher Portal)
+## Java — `com.bugylabs:gridapi-sdk` → Maven Central (Central Publisher Portal)
 
-**Status: BLOCKED** (code READY, namespace and credentials missing)
+**Status: READY** (namespace verified, public key published, credentials configured)
 
-- [x] `pom.xml`: version `1.0.0`, sources and javadoc jars, GPG signing, `central-publishing-maven-plugin:0.12.0` with `publishingServerId=central`; contract tests (52 checks) pass locally.
-- [ ] Platform: verify ownership of the `io.gridapi` namespace in the Central Publisher Portal: <https://central.sonatype.com/> → Namespaces. If `io.gridapi` is not owned/verifiable, use an owned namespace and update all coordinates first (owner decision required).
-- [ ] GPG: generate a signing key, publish the public key to a public keyserver, and store the private key as GitHub secret `GPG_PRIVATE_KEY` and its passphrase as `MAVEN_GPG_PASSPHRASE`. Never commit the key.
-- [ ] GitHub secrets `CENTRAL_USERNAME` and `CENTRAL_PASSWORD` (Central Portal generated user token), plus environment `maven-central-production`. Docs: <https://central.sonatype.org/publish/publish-portal-maven/>.
-- [ ] Next action: owner verifies namespace, adds secrets/environment, then pushes `java-v1.0.0`. Publication is not claimed until the portal shows the release as published; the workflow polls Maven Central.
+- [x] `pom.xml`: coordinates `com.bugylabs:gridapi-sdk:1.0.0`, sources and javadoc jars, GPG signing pinned to fingerprint `9FA34FA29C9759534B98910946547264E642F2E2`, `central-publishing-maven-plugin:0.12.0` with `publishingServerId=central`, `deploymentName=gridapi-sdk-1.0.0`, `autoPublish=true`, `waitUntil=published`; contract tests (69 checks) pass locally.
+- [x] Platform: namespace `com.bugylabs` is **Verified** in the Central Publisher Portal (Org: Bugylabs).
+- [x] GPG: public key published to and retrievable from `keys.openpgp.org` by full fingerprint; private key stored as secret `GPG_PRIVATE_KEY`, passphrase as `MAVEN_GPG_PASSPHRASE`. Never commit the key.
+- [x] GitHub secrets `CENTRAL_USERNAME` and `CENTRAL_PASSWORD` and environment `maven-central-production` are configured.
+- [ ] Next action: trigger `publish-maven.yml`; publication is not claimed until the artifact is publicly available on Maven Central.
 
 ## .NET / C# — `GridAPI` → NuGet
 
@@ -89,7 +89,7 @@ All checks below ran locally on 2026-11-21 and passed:
 - [ ] Create the canonical public repository at <https://github.com/new> using owner `bugylabs` and name `gridapi-sdk`; push the `main` branch from this local checkout. Decide whether `bugylabs` should become an organization before publishing (recommended for shared ownership).
 - [ ] Create GitHub Environments: `npm-production`, `pypi-production`, `maven-central-production`, `nuget-production`, `go-production`, `cratesio-production`. Add required reviewers/protection rules as policy requires.
 - [ ] Verify the custom proprietary license with legal counsel before any publication; confirm it is acceptable to npm/PyPI/Maven/NuGet/crates.io metadata policies (crates.io uses `license-file`, npm uses `SEE LICENSE IN LICENSE`).
-- [ ] Confirm package owner decisions: keep `gridapi-sdk` crate name (`gridapi` is also available), keep `io.gridapi` Maven namespace (an owned namespace is required), keep npm scope `@gridapi`.
+- [ ] Confirm package owner decisions: keep `gridapi-sdk` crate name (`gridapi` is also available), use `com.bugylabs` Maven namespace (verified), keep npm scope `@gridapi`.
 
 ## Prioritized manual checklist
 

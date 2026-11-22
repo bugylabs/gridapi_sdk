@@ -20,7 +20,7 @@ separate written agreement with BugyLabs. See [LICENSE](LICENSE).
 | --- | --- | --- | --- | --- |
 | TypeScript / JavaScript | 1.0.0 | `npm install @gridapi/sdk` | [npm](https://www.npmjs.com/package/@gridapi/sdk) | [README](packages/javascript/README.md) · [source](packages/javascript) |
 | Python | 1.0.0 | `pip install gridapi-sdk` | [PyPI](https://pypi.org/project/gridapi-sdk/) | [README](packages/python/README.md) · [source](packages/python) |
-| Java | 1.0.0 | `io.gridapi:gridapi-sdk:1.0.0` | [Maven Central](https://central.sonatype.com/artifact/io.gridapi/gridapi-sdk) | [README](packages/java/README.md) · [source](packages/java) |
+| Java | 1.0.0 | `com.bugylabs:gridapi-sdk:1.0.0` | [Maven Central](https://central.sonatype.com/artifact/com.bugylabs/gridapi-sdk) | [README](packages/java/README.md) · [source](packages/java) |
 | .NET / C# | 1.0.0 | `dotnet add package GridAPI` | [NuGet](https://www.nuget.org/packages/GridAPI/) | [README](packages/dotnet/README.md) · [source](packages/dotnet) |
 | Go | 1.0.0 | `go get github.com/bugylabs/gridapi-sdk` | [Go modules](https://pkg.go.dev/github.com/bugylabs/gridapi-sdk) | [README](packages/go/README.md) · [source](packages/go) |
 | Rust | 1.0.0 | `gridapi-sdk = "1.0"` | [crates.io](https://crates.io/crates/gridapi-sdk) | [README](packages/rust/README.md) · [source](packages/rust) |

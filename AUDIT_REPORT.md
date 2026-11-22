@@ -37,7 +37,7 @@ included, referenced by builds, or published from this repository.
 | PyPI | `gridapi-sdk` | free |
 | crates.io | `gridapi-sdk` (`gridapi` also free) | free |
 | NuGet | `GridAPI` | free |
-| Maven Central | `io.gridapi:gridapi-sdk` | no existing artifact found |
+| Maven Central | `com.bugylabs:gridapi-sdk` | no existing artifact found |
 | GitHub | `bugylabs` account exists (user, not org); `bugylabs/gridapi-sdk` repo does not exist | owner must create the repository |
 
 Name availability is **not** ownership. No package has been published, and no

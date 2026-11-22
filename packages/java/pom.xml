@@ -72,7 +72,8 @@
         <extensions>true</extensions>
         <configuration>
           <publishingServerId>central</publishingServerId>
-          <autoPublish>false</autoPublish>
+          <deploymentName>gridapi-sdk-1.0.0</deploymentName>
+          <autoPublish>true</autoPublish>
           <waitUntil>validated</waitUntil>
         </configuration>
       </plugin>

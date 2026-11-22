@@ -85,7 +85,7 @@ def main():
     release_files = {
         "packages/javascript/package.json": ('"version": "1.0.0"', '"license": "SEE LICENSE IN LICENSE"'),
         "packages/python/pyproject.toml": ('version = "1.0.0"', 'license = { file = "LICENSE" }'),
-        "packages/java/pom.xml": ("<version>1.0.0</version>", "BugyLabs Proprietary"),
+        "packages/java/pom.xml": ("<groupId>com.bugylabs</groupId>", "<version>1.0.0</version>", "BugyLabs Proprietary"),
         "packages/dotnet/GridAPI/GridAPI.csproj": ("<Version>1.0.0</Version>", "<PackageLicenseFile>"),
         "packages/rust/Cargo.toml": ('version = "1.0.0"', 'license-file = "LICENSE"'),
     }
@@ -106,7 +106,7 @@ def main():
     private_refs = re.compile(r"/Users/|gridapi_server|github\.com/gridapi/gridapi_sdk")
     for path in ROOT.rglob("*"):
         rel = path.relative_to(ROOT)
-        if not path.is_file() or any(part in {".git", "node_modules", "dist", "target", "obj", "bin"} for part in rel.parts):
+        if not path.is_file() or any(part in {".git", "node_modules", "dist", "target", "obj", "bin", ".venv", "venv"} for part in rel.parts):
             continue
         # The audit report quotes the legacy paths deliberately; this file defines the pattern.
         if rel.as_posix() in {"AUDIT_REPORT.md", "scripts/validate_contract.py"}:
