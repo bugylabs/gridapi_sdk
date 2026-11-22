@@ -61,7 +61,7 @@
         <artifactId>maven-gpg-plugin</artifactId>
         <version>3.2.7</version>
         <configuration>
-          <keyname>9FA34FA29C9759534B98910946547264E642F2E2</keyname>
+          <keyname>${env.MAVEN_GPG_KEYNAME}</keyname>
         </configuration>
         <executions><execution><id>sign-artifacts</id><phase>verify</phase><goals><goal>sign</goal></goals></execution></executions>
       </plugin>

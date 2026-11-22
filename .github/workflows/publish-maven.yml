@@ -55,11 +55,12 @@ jobs:
           CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
           CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+          MAVEN_GPG_KEYNAME: 9FA34FA29C9759534B98910946547264E642F2E2
       - name: Verify Maven Central availability
         run: |
           V="${{ steps.ver.outputs.version }}"
           for i in $(seq 1 20); do
-            if curl -fsS -o /dev/null "https://repo1.maven.org/maven2/io/gridapi/gridapi-sdk/$V/gridapi-sdk-$V.pom"; then
+            if curl -fsS -o /dev/null "https://repo1.maven.org/maven2/com/bugylabs/gridapi-sdk/$V/gridapi-sdk-$V.pom"; then
               echo "Verified on Maven Central"; exit 0
             fi
             sleep 15
