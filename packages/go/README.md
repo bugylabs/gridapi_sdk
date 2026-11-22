@@ -4,12 +4,12 @@
 
 The official, standard-library-only Go client for the [GridAPI public REST API](../../openapi/openapi.yaml). It uses only `net/http` and `encoding/json` — no third-party dependencies — and exposes the same operations as the other GridAPI SDKs from one contract.
 
-**Server-side only.** The API key is account-level and authenticates every project you can access. A project slug is a routing/authorization target, never a credential. The server resolves your role per project; this SDK never makes authorization decisions. Never ship the key in a browser bundle, mobile app, or other client-side code.
+**Server-side only.** Two keys are required: `GRIDAPI_API_KEY` (`gp_live_...`) is the account-level credential sent as `Authorization: Bearer ...`, and `GRIDAPI_PROJECT_KEY` (`gapi_live_...`) is a local-only scope guard. The public REST API has **no project-key header**, so the project key is never transmitted, logged, or echoed — it is validated locally at construction. A project slug is a routing/authorization target, never a credential. The server resolves your role per project; this SDK checks membership locally as a convenience, not as a security boundary. Never ship either key in a browser bundle, mobile app, or other client-side code.
 
 ## Requirements
 
 - Go 1.22 or newer.
-- A GridAPI account and an API key (`gp_live_...`).
+- A GridAPI account, an account API key (`gp_live_...`), and a project key (`gapi_live_...`).
 
 ## Install
 
@@ -43,31 +43,38 @@ Every operation is a method on `*gridapi.Client` and takes a `context.Context`:
 | Identity | `GetMe` | Read authenticated-account information |
 | Usage | `GetUsage` | Read subscription API-call usage |
 
-Also included: typed, branchable errors; redacted error messages; context deadlines; per-attempt timeouts; retries with exponential backoff, jitter, and `Retry-After` support; exact-match filtering and pagination. `Client` is safe for concurrent use.
+Also included: typed, branchable errors; redacted error messages; context deadlines; per-attempt timeouts; retries with exponential backoff, jitter, and `Retry-After` support; exact-match filtering and pagination; a `Verify` scope check run by every data method. `Client` is safe for concurrent use.
 
 ## Authentication
 
-Set your account-level key in `GRIDAPI_API_KEY`. It is sent as `Authorization: Bearer <key>` on every request.
+Both keys are required. Set the account key in `GRIDAPI_API_KEY` and the project key in `GRIDAPI_PROJECT_KEY`:
 
 ```sh
 export GRIDAPI_API_KEY=gp_live_...
+export GRIDAPI_PROJECT_KEY=gapi_live_...
 ```
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `GRIDAPI_API_KEY` | yes | — | Account-level API key. `NewClient` fails with `*AuthenticationError` if unset. |
+| `GRIDAPI_API_KEY` | yes | — | Account key (`gp_live_...`), sent as `Authorization: Bearer ...`. |
+| `GRIDAPI_PROJECT_KEY` | yes | — | Project key (`gapi_live_...`). Local scope guard only: never transmitted. |
 | `GRIDAPI_BASE_URL` | no | `https://api.gridapi.in` | API root; override for a proxy or test server. |
 | `GRIDAPI_TIMEOUT_MS` | no | `30000` | Per-attempt request timeout in milliseconds. |
+
+`NewClient` returns `*ConfigurationError` if either key is missing, has the wrong prefix, or has an empty suffix. Key values never appear in error messages.
 
 Environment variables are read by `NewClient` and can be overridden with options:
 
 ```go
 client, err := gridapi.NewClient(
     gridapi.WithAPIKey("gp_live_..."),
+    gridapi.WithProjectKey("gapi_live_..."),
     gridapi.WithBaseURL("https://api.gridapi.in"),
     gridapi.WithTimeout(10*time.Second),
 )
 ```
+
+The project key is **not** sent on any request. The public REST API has no project-key header; the local check is a convenience guard, not a security boundary — the server still resolves your role per project.
 
 ## Quick start
 
@@ -84,7 +91,7 @@ import (
 )
 
 func main() {
-    client, err := gridapi.NewClient() // reads GRIDAPI_API_KEY
+    client, err := gridapi.NewClient() // reads GRIDAPI_API_KEY and GRIDAPI_PROJECT_KEY
     if err != nil {
         log.Fatal(err)
     }
@@ -111,7 +118,7 @@ func main() {
 client, err := gridapi.NewClient()
 ```
 
-`NewClient` reads the environment, applies any `Option`, and returns `(*Client, error)`. Options: `WithAPIKey`, `WithBaseURL`, `WithTimeout`, `WithMaxRetries`, `WithRetryDelay`, `WithRetryWrites`, `WithHTTPClient`. Reuse one client for the lifetime of your process; it is concurrency-safe.
+`NewClient` reads the environment, applies any `Option`, and returns `(*Client, error)`. Options: `WithAPIKey`, `WithProjectKey`, `WithBaseURL`, `WithTimeout`, `WithMaxRetries`, `WithRetryDelay`, `WithRetryWrites`, `WithHTTPClient`. Reuse one client for the lifetime of your process; it is concurrency-safe.
 
 ## Get records
 
@@ -216,6 +223,18 @@ me, err := client.GetMe(ctx)       // *gridapi.Account (Authenticated, Account.E
 usage, err := client.GetUsage(ctx) // *gridapi.Usage (TotalAPICallsUsed, TotalAPICallsLeft)
 ```
 
+## Verification and project scope
+
+Every data method (`Get`, `Query`, `GetByID`, `Post`, `Patch`, `Put`, `Delete`, `Count`) calls `Verify` before its request. You can also call it directly for an early check:
+
+```go
+if err := client.Verify(ctx, "acme"); err != nil {
+    log.Fatal(err)
+}
+```
+
+`Verify(ctx, project)` first calls `GET /api/v1/me` once per client and returns `*AuthenticationError` if `authenticated` is not true. When `project` is non-empty it then calls `GET /api/v1/me/projects` and accepts a `slug`, `id`, or `name` match. An empty project list yields `*AuthorizationError`; a non-empty list without a match yields `*ProjectNotFoundError`. The account check and each verified project are cached, discovery calls never re-enter `Verify`, and the method is safe for concurrent use.
+
 ## Error handling
 
 Every failing operation returns a typed error that embeds `*gridapi.Error` (fields `Status`, `Code`, `Message`, `Body`, `Retryable`). Messages and bodies are redacted, so they are safe to log. Match a category with `errors.As`:
@@ -230,7 +249,7 @@ if err != nil {
     )
     switch {
     case errors.As(err, &auth):
-        log.Fatal("check GRIDAPI_API_KEY: ", err) // 401
+        log.Fatal("check GRIDAPI_API_KEY: ", err) // 401; local scope errors use ProjectNotFoundError/AuthorizationError
     case errors.As(err, &quota):
         log.Fatal("subscription quota exhausted: ", err) // 429, terminal
     case errors.As(err, &rate):
@@ -248,7 +267,7 @@ if err != nil {
 _ = users
 ```
 
-The full taxonomy is `AuthenticationError` (401), `AuthorizationError` (403), `ProjectNotFoundError`, `TableNotFoundError`, `RecordNotFoundError` (404 variants), `ValidationError` (400/422), `RateLimitError` and `QuotaExceededError` (429), `UpstreamError` (502+), `NetworkError`, `TimeoutError`. Unclassified responses return `*gridapi.Error`. All of them satisfy the `gridapi.APIError` interface, so `errors.As(err, &api)` works for category-agnostic access to `StatusCode()`, `ErrorCode()`, and `IsRetryable()`.
+The full taxonomy is `ConfigurationError` (missing or malformed key, before any request), `AuthenticationError` (401), `AuthorizationError` (403), `ProjectNotFoundError`, `TableNotFoundError`, `RecordNotFoundError` (404 variants), `ValidationError` (400/422), `RateLimitError` and `QuotaExceededError` (429), `UpstreamError` (502+), `NetworkError`, `TimeoutError`. The `AuthorizationError` and `ProjectNotFoundError` raised by `Verify` for an empty or non-matching project list are client-side and have no HTTP status. Unclassified responses return `*gridapi.Error`. All of them satisfy the `gridapi.APIError` interface, so `errors.As(err, &api)` works for category-agnostic access to `StatusCode()`, `ErrorCode()`, and `IsRetryable()`.
 
 ## Timeouts and retries
 
@@ -270,15 +289,16 @@ A runnable program is at [`examples/go/main.go`](../../examples/go/main.go):
 
 ```sh
 export GRIDAPI_API_KEY=gp_live_...
+export GRIDAPI_PROJECT_KEY=gapi_live_...
 go run ./examples/go <project> [table]
 ```
 
 ## Contract tests
 
-The tests start the shared mock server themselves. From the repository root, once Go and Node are installed:
+Unit tests for key validation and `Verify` need no external services; contract tests start the shared mock server themselves. From the repository root, once Go and Node are installed:
 
 ```sh
-go test ./tests/contract/go -v
+go test ./packages/go/ ./tests/contract/go/ -v
 ```
 
 ## Contributing

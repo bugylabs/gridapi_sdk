@@ -81,6 +81,8 @@ public sealed class GridApiOptions
 {
     /** Defaults to GRIDAPI_API_KEY (required). */
     public string? ApiKey { get; set; }
+    /** Defaults to GRIDAPI_PROJECT_KEY (required). Local scope guard; never transmitted. */
+    public string? ProjectKey { get; set; }
     /** Defaults to GRIDAPI_BASE_URL or https://api.gridapi.in. */
     public string? BaseUrl { get; set; }
     /** Defaults to GRIDAPI_TIMEOUT_MS or 30000. */
@@ -192,6 +194,13 @@ public class GridApiError : Exception
     public bool Retryable { get; }
 }
 
+/** Idiomatic .NET exception for missing or malformed SDK configuration. */
+public sealed class ConfigurationException : GridApiError
+{
+    public ConfigurationException(string message)
+        : base(message) { }
+}
+
 public sealed class AuthenticationError : GridApiError
 {
     public AuthenticationError(string message, int? status = null, string? code = null, string? body = null, bool retryable = false)
@@ -268,14 +277,28 @@ public sealed class GridApiClient : IDisposable
     private readonly bool _retryWrites;
     private readonly HttpClient _http;
     private readonly JsonSerializerOptions _json;
+    private Task? _accountVerification;
+    private readonly HashSet<string> _verifiedProjects = new(StringComparer.Ordinal);
+
+    private const string AccountPrefix = "gp_live_";
+    private const string ProjectPrefix = "gapi_live_";
+
+    private static string RequiredKey(string? value, string prefix, string envName, string optionName)
+    {
+        if (string.IsNullOrEmpty(value))
+            throw new ConfigurationException($"GridAPI: missing {envName}. Set it or pass {optionName} in options.");
+        if (!value.StartsWith(prefix, StringComparison.Ordinal) || value.Length == prefix.Length)
+            throw new ConfigurationException($"GridAPI: {envName} must be a {prefix}... key.");
+        return value;
+    }
 
     public GridApiClient(GridApiOptions? options = null)
     {
-        var key = options?.ApiKey ?? Environment.GetEnvironmentVariable("GRIDAPI_API_KEY");
-        if (string.IsNullOrEmpty(key))
-            throw new AuthenticationError("GridAPI: missing API key. Set GRIDAPI_API_KEY or pass ApiKey in options.");
+        _apiKey = RequiredKey(options?.ApiKey ?? Environment.GetEnvironmentVariable("GRIDAPI_API_KEY"),
+            AccountPrefix, "GRIDAPI_API_KEY", "ApiKey");
+        RequiredKey(options?.ProjectKey ?? Environment.GetEnvironmentVariable("GRIDAPI_PROJECT_KEY"),
+            ProjectPrefix, "GRIDAPI_PROJECT_KEY", "ProjectKey");
 
-        _apiKey = key;
         _baseUrl = (options?.BaseUrl ?? Environment.GetEnvironmentVariable("GRIDAPI_BASE_URL")
                     ?? "https://api.gridapi.in").TrimEnd('/');
         var timeoutRaw = Environment.GetEnvironmentVariable("GRIDAPI_TIMEOUT_MS");
@@ -291,6 +314,35 @@ public sealed class GridApiClient : IDisposable
     }
 
     public void Dispose() => _http.Dispose();
+
+    /**
+     * Asserts the cached account check and (when a project is given) that the project
+     * is in the account's authorized list. The project key is a local guard only:
+     * the public REST API has no project-key header, so it is never transmitted.
+     */
+    public async Task VerifyAsync(string? project = null, CancellationToken cancellationToken = default)
+    {
+        await (_accountVerification ??= VerifyAccountAsync(cancellationToken)).ConfigureAwait(false);
+        if (project is null || _verifiedProjects.Contains(project)) return;
+
+        // Discovery calls read the request path directly so they never re-enter VerifyAsync.
+        var projects = await ListProjectsAsync(cancellationToken).ConfigureAwait(false);
+        var allowed = projects.Any(p => p.Slug == project || p.Id == project || p.Name == project);
+        if (!allowed)
+        {
+            if (projects.Count == 0)
+                throw new AuthorizationError("GridAPI: no projects are authorized for this account and project key.");
+            throw new ProjectNotFoundError($"Project not found: {project}");
+        }
+        _verifiedProjects.Add(project);
+    }
+
+    private async Task VerifyAccountAsync(CancellationToken cancellationToken)
+    {
+        var me = await RequestAsync<AccountInfo>(HttpMethod.Get, "/api/v1/me", null, cancellationToken).ConfigureAwait(false);
+        if (!me.Authenticated)
+            throw new AuthenticationError("GridAPI: account key is not authenticated.");
+    }
 
     private static string DataPath(string project, string table, string? id = null)
     {
@@ -440,16 +492,22 @@ public sealed class GridApiClient : IDisposable
     public Task<ListResponse<GridRecord>> GetAsync(string project, string table, QueryOptions? options = null, CancellationToken cancellationToken = default)
         => GetAsync<GridRecord>(project, table, options, cancellationToken);
 
-    public Task<ListResponse<T>> GetAsync<T>(string project, string table, QueryOptions? options = null, CancellationToken cancellationToken = default)
+    public async Task<ListResponse<T>> GetAsync<T>(string project, string table, QueryOptions? options = null, CancellationToken cancellationToken = default)
         where T : GridRecord, new()
-        => RequestAsync<ListResponse<T>>(HttpMethod.Get, DataPath(project, table) + QueryString(options), null, cancellationToken);
+    {
+        await VerifyAsync(project, cancellationToken).ConfigureAwait(false);
+        return await RequestAsync<ListResponse<T>>(HttpMethod.Get, DataPath(project, table) + QueryString(options), null, cancellationToken).ConfigureAwait(false);
+    }
 
     public Task<GridRecord> GetByIdAsync(string project, string table, string id, CancellationToken cancellationToken = default)
         => GetByIdAsync<GridRecord>(project, table, id, cancellationToken);
 
-    public Task<T> GetByIdAsync<T>(string project, string table, string id, CancellationToken cancellationToken = default)
+    public async Task<T> GetByIdAsync<T>(string project, string table, string id, CancellationToken cancellationToken = default)
         where T : GridRecord, new()
-        => RequestAsync<T>(HttpMethod.Get, DataPath(project, table, id), null, cancellationToken);
+    {
+        await VerifyAsync(project, cancellationToken).ConfigureAwait(false);
+        return await RequestAsync<T>(HttpMethod.Get, DataPath(project, table, id), null, cancellationToken).ConfigureAwait(false);
+    }
 
     public Task<CreateResponse<GridRecord>> PostAsync(string project, string table, GridRecord record, CancellationToken cancellationToken = default)
         => PostAsync<GridRecord>(project, table, record, cancellationToken);
@@ -457,30 +515,45 @@ public sealed class GridApiClient : IDisposable
     public Task<CreateResponse<GridRecord>> PostAsync(string project, string table, IEnumerable<GridRecord> records, CancellationToken cancellationToken = default)
         => PostAsync<GridRecord>(project, table, records, cancellationToken);
 
-    public Task<CreateResponse<T>> PostAsync<T>(string project, string table, GridRecord record, CancellationToken cancellationToken = default)
+    public async Task<CreateResponse<T>> PostAsync<T>(string project, string table, GridRecord record, CancellationToken cancellationToken = default)
         where T : GridRecord, new()
-        => RequestAsync<CreateResponse<T>>(HttpMethod.Post, DataPath(project, table), record, cancellationToken);
+    {
+        await VerifyAsync(project, cancellationToken).ConfigureAwait(false);
+        return await RequestAsync<CreateResponse<T>>(HttpMethod.Post, DataPath(project, table), record, cancellationToken).ConfigureAwait(false);
+    }
 
-    public Task<CreateResponse<T>> PostAsync<T>(string project, string table, IEnumerable<GridRecord> records, CancellationToken cancellationToken = default)
+    public async Task<CreateResponse<T>> PostAsync<T>(string project, string table, IEnumerable<GridRecord> records, CancellationToken cancellationToken = default)
         where T : GridRecord, new()
-        => RequestAsync<CreateResponse<T>>(HttpMethod.Post, DataPath(project, table), records, cancellationToken);
+    {
+        await VerifyAsync(project, cancellationToken).ConfigureAwait(false);
+        return await RequestAsync<CreateResponse<T>>(HttpMethod.Post, DataPath(project, table), records, cancellationToken).ConfigureAwait(false);
+    }
 
     public Task<UpdateResponse<GridRecord>> PatchAsync(string project, string table, string id, GridRecord changes, CancellationToken cancellationToken = default)
         => PatchAsync<GridRecord>(project, table, id, changes, cancellationToken);
 
-    public Task<UpdateResponse<T>> PatchAsync<T>(string project, string table, string id, GridRecord changes, CancellationToken cancellationToken = default)
+    public async Task<UpdateResponse<T>> PatchAsync<T>(string project, string table, string id, GridRecord changes, CancellationToken cancellationToken = default)
         where T : GridRecord, new()
-        => RequestAsync<UpdateResponse<T>>(HttpMethod.Patch, DataPath(project, table, id), changes, cancellationToken);
+    {
+        await VerifyAsync(project, cancellationToken).ConfigureAwait(false);
+        return await RequestAsync<UpdateResponse<T>>(HttpMethod.Patch, DataPath(project, table, id), changes, cancellationToken).ConfigureAwait(false);
+    }
 
     public Task<UpdateResponse<GridRecord>> PutAsync(string project, string table, string id, GridRecord record, CancellationToken cancellationToken = default)
         => PutAsync<GridRecord>(project, table, id, record, cancellationToken);
 
-    public Task<UpdateResponse<T>> PutAsync<T>(string project, string table, string id, GridRecord record, CancellationToken cancellationToken = default)
+    public async Task<UpdateResponse<T>> PutAsync<T>(string project, string table, string id, GridRecord record, CancellationToken cancellationToken = default)
         where T : GridRecord, new()
-        => RequestAsync<UpdateResponse<T>>(HttpMethod.Put, DataPath(project, table, id), record, cancellationToken);
+    {
+        await VerifyAsync(project, cancellationToken).ConfigureAwait(false);
+        return await RequestAsync<UpdateResponse<T>>(HttpMethod.Put, DataPath(project, table, id), record, cancellationToken).ConfigureAwait(false);
+    }
 
-    public Task<DeleteResponse> DeleteAsync(string project, string table, string id, CancellationToken cancellationToken = default)
-        => RequestAsync<DeleteResponse>(HttpMethod.Delete, DataPath(project, table, id), null, cancellationToken);
+    public async Task<DeleteResponse> DeleteAsync(string project, string table, string id, CancellationToken cancellationToken = default)
+    {
+        await VerifyAsync(project, cancellationToken).ConfigureAwait(false);
+        return await RequestAsync<DeleteResponse>(HttpMethod.Delete, DataPath(project, table, id), null, cancellationToken).ConfigureAwait(false);
+    }
 
     public Task<ListResponse<GridRecord>> QueryAsync(string project, string table, QueryOptions? options = null, CancellationToken cancellationToken = default)
         => GetAsync(project, table, options, cancellationToken);

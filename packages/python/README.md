@@ -5,10 +5,11 @@ Source Available | Proprietary | Non-Commercial Use Only — Copyright (c) 2026 
 `gridapi-sdk` 1.0.0 is the Python client for the GridAPI public REST API. It is a
 small, synchronous wrapper over `urllib.request` from the Python standard
 library: no third-party runtime dependencies, no async runtime, and no code
-generation. One account-level API key authenticates every project authorized
-for that account.
+generation. Two keys are required: an account key (`gp_live_...`) that
+authenticates the account, and a project key (`gapi_live_...`) that acts as a
+local scope guard.
 
-> **Server-side only.** This SDK sends the API key in an
+> **Server-side only.** This SDK sends only the account key in an
 > `Authorization: Bearer ...` header. Use it from a backend, a script, or a
 > server-side job. Never embed the key in a browser bundle, mobile app, or any
 > other client-side code. A project slug is a routing/authorization target,
@@ -34,6 +35,7 @@ public method is listed below.
 | `get_schema(project, table)` | Read a table's schema |
 | `get_me()` | Account, authentication, and subscription info |
 | `get_usage()` | Account API usage counters |
+| `verify(project=None)` | Check authentication and that a project is authorized |
 
 Filtering is exact-match only. Pagination uses `page` and `limit`. Sorting and
 text search are deliberately not exposed: the backing Google Sheets data source
@@ -42,7 +44,9 @@ for backwards compatibility.
 
 Discovery reads (`list_projects`, `list_tables`, `get_schema`, `get_me`,
 `get_usage`) consume no quota. Listing records consumes one quota unit per call
-(which is why `count` also costs one).
+(which is why `count` also costs one). Every data method calls `verify(project)`
+before its request; the account check and each verified project are cached, and
+discovery reads never re-trigger verification.
 
 ## Installation
 
@@ -75,7 +79,7 @@ PYTHONPATH=packages/python python3 your_script.py
 ```python
 from gridapi import GridApiClient
 
-client = GridApiClient()  # reads GRIDAPI_API_KEY from the environment
+client = GridApiClient()  # reads GRIDAPI_API_KEY / GRIDAPI_PROJECT_KEY from the environment
 
 # Discovery: which projects and tables can this key reach?
 for project in client.list_projects():
@@ -107,30 +111,42 @@ reads credentials from the environment and contains no keys in source.
 
 ## Authentication
 
-Set `GRIDAPI_API_KEY` to your account-level key before constructing the client:
+Set both environment variables before constructing the client:
 
 ```sh
-export GRIDAPI_API_KEY="gp_live_..."       # account-level key; keep it secret
+export GRIDAPI_API_KEY="gp_live_..."       # account key; keep it secret
+export GRIDAPI_PROJECT_KEY="gapi_live_..." # project key; keep it secret
 ```
 
-The key is account-level: one key works for every project that account is
-authorized to use. The project slug you pass as the first argument to record
-methods (for example `"acme"`) is only a routing/authorization target. It is
-never a credential, and the SDK never makes authorization decisions — the
-server resolves the caller's role per project.
+The account key is account-level: one key works for every project that account
+is authorized to use. The project key (`gapi_live_...`) is a **local scope
+guard**, not a network credential: the public REST API has no project-key
+header, so this SDK never transmits, logs, or echoes it. Only the account key
+is sent as `Authorization: Bearer <account key>` on every request. The project
+slug you pass as the first argument to record methods (for example `"acme"`)
+is likewise only a routing/authorization target, never a credential.
 
-The SDK sends `Authorization: Bearer <key>` on every request. Constructing a
-client with no key available raises `AuthenticationError`. Error messages,
-`code`, `body`, and `repr` are redacted, so an exception is safe to log.
+`verify(project=None)` checks `/api/v1/me` for authentication, then
+`/api/v1/me/projects` to confirm the project slug, id, or name is authorized.
+An unauthenticated account raises `AuthenticationError`; an account with no
+projects raises `AuthorizationError`; a non-empty project list without that
+project raises `ProjectNotFoundError`. The account check and verified projects
+are cached, and record methods call `verify(project)` before each request.
 
-Use this SDK only in server-side code. Do not ship the key to a browser, a
+Both keys are required at construction. A missing, empty-suffix, or
+wrong-prefix key raises `ConfigurationError` before any request. Error
+messages, `code`, `body`, and `repr` are redacted and never contain key values,
+so an exception is safe to log.
+
+Use this SDK only in server-side code. Do not ship either key to a browser, a
 mobile app, or a client-side bundle.
 
 ## Environment variables
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `GRIDAPI_API_KEY` | yes | — | Account-level API key; missing key raises `AuthenticationError` |
+| `GRIDAPI_API_KEY` | yes | — | Account key (`gp_live_...`); missing/malformed raises `ConfigurationError` |
+| `GRIDAPI_PROJECT_KEY` | yes | — | Project key (`gapi_live_...`), local scope guard; never transmitted |
 | `GRIDAPI_BASE_URL` | no | `https://api.gridapi.in` | API base URL, e.g. a local mock server |
 | `GRIDAPI_TIMEOUT_MS` | no | `30000` | Per-request timeout in milliseconds |
 
@@ -148,6 +164,7 @@ client = GridApiClient()
 # Explicit configuration.
 client = GridApiClient(
     api_key="gp_live_...",
+    project_key="gapi_live_...",
     base_url="https://api.gridapi.in",
     timeout_ms=30000,
     max_retries=2,
@@ -160,7 +177,8 @@ Constructor signature:
 
 ```python
 GridApiClient(api_key=None, base_url=None, timeout_ms=None,
-              max_retries=2, retry_delay_ms=500, retry_writes=False)
+              max_retries=2, retry_delay_ms=500, retry_writes=False,
+              project_key=None)
 ```
 
 `GridAPI` is an alias of `GridApiClient`; the two names are interchangeable.
@@ -285,9 +303,10 @@ redacted so `str(error)` and `repr(error)` are safe to log.
 | Exception | When it is raised |
 | --- | --- |
 | `GridApiError` | Base class; also used for unmapped HTTP errors |
-| `AuthenticationError` | Missing API key, or HTTP 401 (invalid/expired key) |
-| `AuthorizationError` | HTTP 403 — key not allowed for this project |
-| `ProjectNotFoundError` | HTTP 404 — project unknown or unauthorized |
+| `ConfigurationError` | Missing/empty-suffix/wrong-prefix account or project key (at construction) |
+| `AuthenticationError` | HTTP 401 (invalid/expired key), or `/api/v1/me` reports not authenticated |
+| `AuthorizationError` | HTTP 403, or no projects authorized for the account during `verify()` |
+| `ProjectNotFoundError` | HTTP 404, or project absent from a non-empty project list during `verify()` |
 | `TableNotFoundError` | HTTP 404 — sheet/endpoint does not exist |
 | `RecordNotFoundError` | HTTP 404 — record does not exist |
 | `ValidationError` | HTTP 400–422 — bad payload or unknown column |
@@ -304,17 +323,25 @@ keys from text before logging.
 from gridapi import (
     GridApiClient,
     GridApiError,
+    ConfigurationError,
     AuthenticationError,
     AuthorizationError,
+    ProjectNotFoundError,
     QuotaExceededError,
 )
 
-client = GridApiClient()
+try:
+    client = GridApiClient()
+except ConfigurationError:
+    print("check GRIDAPI_API_KEY and GRIDAPI_PROJECT_KEY")
+    raise
 
 try:
     client.get("acme", "users")
 except AuthenticationError:
     print("check GRIDAPI_API_KEY")
+except ProjectNotFoundError:
+    print("unknown project — check the project argument to verify()")
 except AuthorizationError:
     print("this key may not access that project")
 except QuotaExceededError:
@@ -402,7 +429,8 @@ Point the SDK at a local mock server (used by the contract tests):
 
 ```python
 client = GridApiClient(
-    api_key="gp_live_testkey",  # public test fixture, not a real credential
+    api_key="gp_live_testkey",       # public test fixture, not a real credential
+    project_key="gapi_live_testproject",  # public test fixture
     base_url="http://127.0.0.1:8787",
 )
 print(client.get_me()["authenticated"])

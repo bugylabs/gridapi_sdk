@@ -27,7 +27,7 @@ included, referenced by builds, or published from this repository.
 | Python metadata | No authors, classifiers or URLs | Added BugyLabs author, proprietary classifier and project URLs. |
 | npm metadata | No repository/homepage/publishConfig | Added repository, homepage, issues, `publishConfig` with `provenance`. |
 | CI | One combined `publish.yml`, no path filtering | Replaced with `ci.yml` + six independent publish workflows with per-SDK path filters and environments. |
-| Docs | Stale per-project-key wording in generated client docs copy (fixed in prior phase) | `gridapi_client` now renders one account key; that repo is outside this one. |
+| Docs | Stale per-project-key wording in generated client docs copy (fixed in prior phase) | `gridapi_client` now renders the two required credentials (`GRIDAPI_API_KEY` + `GRIDAPI_PROJECT_KEY`); that repo is outside this one. |
 
 ## Registry availability (live checks, 2026-11-21; 404 means the name is free)
 

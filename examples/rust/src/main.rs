@@ -1,14 +1,16 @@
 //! Runnable GridAPI example. Configuration comes only from the environment:
-//!   GRIDAPI_API_KEY   (required)
-//!   GRIDAPI_BASE_URL  (optional, default https://api.gridapi.in)
-//!   GRIDAPI_TIMEOUT_MS (optional, default 30000)
+//!   GRIDAPI_API_KEY     (required, gp_live_...; sent as Authorization: Bearer)
+//!   GRIDAPI_PROJECT_KEY (required, gapi_live_...; local scope guard only, never sent)
+//!   GRIDAPI_BASE_URL    (optional, default https://api.gridapi.in)
+//!   GRIDAPI_TIMEOUT_MS  (optional, default 30000)
 //!
 //! Run from this directory with: cargo run
 
-use gridapi_sdk::{Client, GridRecord, QueryOptions, GridError};
+use gridapi_sdk::{Client, GridError, GridRecord, QueryOptions};
 
 fn main() -> Result<(), GridError> {
     let client = Client::from_env()?;
+    client.verify(Some("acme"))?;
 
     let me = client.get_me()?;
     println!("authenticated: {}", me.authenticated);

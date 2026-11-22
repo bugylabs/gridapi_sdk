@@ -1,11 +1,14 @@
 // Runnable GridAPI Go SDK example. Uses environment variables only:
 //
-//	export GRIDAPI_API_KEY=gp_live_...
+//	export GRIDAPI_API_KEY=gp_live_...       # account key, sent as Bearer
+//	export GRIDAPI_PROJECT_KEY=gapi_live_... # local scope guard, never transmitted
 //	export GRIDAPI_BASE_URL=https://api.gridapi.in   # optional
 //	export GRIDAPI_TIMEOUT_MS=30000                  # optional
 //	go run ./examples/go
 //
-// The key is account-level: keep this program server-side.
+// Both keys are required. Data methods call Verify automatically: the account
+// is checked once and the project slug is checked against the account's
+// authorized projects. Keep both keys server-side.
 package main
 
 import (
@@ -52,6 +55,11 @@ func main() {
 		table = os.Args[2]
 	}
 
+	// Data methods verify automatically; call Verify for an early scope check.
+	if err := client.Verify(ctx, project); err != nil {
+		log.Fatal(err)
+	}
+
 	users, err := client.Get(ctx, project, table, &gridapi.QueryOptions{
 		Filter: map[string]string{"status": "active"},
 		Limit:  10,
@@ -64,7 +72,7 @@ func main() {
 		case errors.As(err, &quota):
 			log.Fatalf("quota exhausted: %v", err)
 		case errors.As(err, &auth):
-			log.Fatalf("check GRIDAPI_API_KEY: %v", err)
+			log.Fatalf("check GRIDAPI_API_KEY / GRIDAPI_PROJECT_KEY: %v", err)
 		default:
 			log.Fatal(err)
 		}

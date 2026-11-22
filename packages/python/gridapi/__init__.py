@@ -1,10 +1,15 @@
 """Official Python SDK for the GridAPI public REST API.
 
-One account-level API key authenticates every authorized project. A project
-slug is a routing/authorization target, never a credential.
+Two keys are required at construction: an account key (``gp_live_...``) from
+``GRIDAPI_API_KEY`` and a project key (``gapi_live_...``) from
+``GRIDAPI_PROJECT_KEY``. Only the account key is sent as the Bearer token. The
+project key never leaves this process: the public REST API has no project-key
+header, so the SDK uses it only as a local scope guard alongside ``verify()``.
 
-Server-side only: this SDK sends the API key in an Authorization header. Do not
-ship it in a browser bundle, mobile app, or any other client-side code.
+A project slug is a routing/authorization target, never a credential.
+
+Server-side only: this SDK sends the account key in an Authorization header. Do
+not ship it in a browser bundle, mobile app, or any other client-side code.
 
 Contract: openapi/openapi.yaml in the gridapi_sdk monorepo. Standard library
 only; no third-party dependencies.
@@ -27,6 +32,7 @@ __all__ = [
     "GridApiClient",
     "GridAPI",
     "GridApiError",
+    "ConfigurationError",
     "AuthenticationError",
     "AuthorizationError",
     "ProjectNotFoundError",
@@ -89,6 +95,10 @@ class GridApiError(Exception):
             f"{self.name}(message={str(self)!r}, status={self.status!r}, "
             f"code={self.code!r}, retryable={self.retryable!r})"
         )
+
+
+class ConfigurationError(GridApiError):
+    """A required key is missing or malformed; raised before any request."""
 
 
 class AuthenticationError(GridApiError):
@@ -211,15 +221,34 @@ def _segment(value):
     return urllib.parse.quote(str(value), safe="")
 
 
+def _required_key(value, prefix, env_name, option_name):
+    """Return a valid key or raise ConfigurationError without echoing its value."""
+    text = "" if value is None else str(value).strip()
+    if not text:
+        raise ConfigurationError(
+            f"GridAPI: missing {env_name}. Set it or pass {option_name}."
+        )
+    if not text.startswith(prefix) or len(text) == len(prefix):
+        raise ConfigurationError(
+            f"GridAPI: {env_name} must be a {prefix}... key."
+        )
+    return text
+
+
 class GridApiClient:
     """Synchronous GridAPI client built on ``urllib`` (standard library only).
 
-    Credentials default to the environment and can be overridden per instance::
+    Both keys default to the environment and can be overridden per instance::
 
-        client = GridApiClient()                 # reads env vars
-        client = GridApiClient(api_key="...")    # explicit override
+        client = GridApiClient()  # reads GRIDAPI_API_KEY / GRIDAPI_PROJECT_KEY
+        client = GridApiClient(api_key="...", project_key="...")
 
-    :param api_key: Account-level key. Defaults to ``GRIDAPI_API_KEY`` (required).
+    Only ``api_key`` is sent as the Bearer token. ``project_key`` is a local
+    scope guard: the public REST API has no project-key header, so it is never
+    transmitted, logged, or echoed.
+
+    :param api_key: Account key (``gp_live_...``). Defaults to ``GRIDAPI_API_KEY`` (required).
+    :param project_key: Project key (``gapi_live_...``). Defaults to ``GRIDAPI_PROJECT_KEY`` (required).
     :param base_url: Defaults to ``GRIDAPI_BASE_URL`` or https://api.gridapi.in.
     :param timeout_ms: Defaults to ``GRIDAPI_TIMEOUT_MS`` or 30000.
     :param max_retries: Retries for transient failures. Default 2.
@@ -228,13 +257,19 @@ class GridApiClient:
     """
 
     def __init__(self, api_key=None, base_url=None, timeout_ms=None,
-                 max_retries=2, retry_delay_ms=500, retry_writes=False):
-        key = api_key if api_key is not None else os.environ.get("GRIDAPI_API_KEY")
-        if not key:
-            raise AuthenticationError(
-                "GridAPI: missing API key. Set GRIDAPI_API_KEY or pass api_key."
-            )
-        self.api_key = key
+                 max_retries=2, retry_delay_ms=500, retry_writes=False,
+                 project_key=None):
+        self.api_key = _required_key(
+            api_key if api_key is not None else os.environ.get("GRIDAPI_API_KEY"),
+            "gp_live_", "GRIDAPI_API_KEY", "api_key",
+        )
+        self.project_key = _required_key(
+            project_key if project_key is not None
+            else os.environ.get("GRIDAPI_PROJECT_KEY"),
+            "gapi_live_", "GRIDAPI_PROJECT_KEY", "project_key",
+        )
+        self._account_verified = False
+        self._verified_projects = set()
         self.base_url = (
             base_url if base_url is not None
             else os.environ.get("GRIDAPI_BASE_URL") or "https://api.gridapi.in"
@@ -252,6 +287,46 @@ class GridApiClient:
         self.max_retries = max_retries
         self.retry_delay_ms = retry_delay_ms
         self.retry_writes = retry_writes
+
+    def verify(self, project=None):
+        """Validate the account, then confirm ``project`` is authorized.
+
+        The account check and each verified project identifier are cached.
+        Discovery calls (``get_me``, ``list_projects``) do not call this method,
+        so verification never recurses into itself.
+
+        :param project: Optional slug, id, or name to authorize.
+        :raises AuthenticationError: the account key is not authenticated.
+        :raises AuthorizationError: no projects are authorized for the account.
+        :raises ProjectNotFoundError: the account has projects, but not this one.
+        """
+        if not self._account_verified:
+            me = self.get_me() or {}
+            if me.get("authenticated") is not True:
+                raise AuthenticationError(
+                    "GridAPI: account is not authenticated", secret=self.api_key
+                )
+            self._account_verified = True
+
+        if project is None or project in self._verified_projects:
+            return
+
+        projects = self.list_projects()
+        authorized = {
+            value
+            for item in projects
+            for value in (item.get("slug"), item.get("id"), item.get("name"))
+        }
+        if project not in authorized:
+            if not projects:
+                raise AuthorizationError(
+                    "GridAPI: no projects are authorized for this account and project key.",
+                    secret=self.api_key,
+                )
+            raise ProjectNotFoundError(
+                f"Project not found: {project}", secret=self.api_key
+            )
+        self._verified_projects.add(project)
 
     def _data_path(self, project, table, id=None):
         path = f"/api/v1/{_segment(project)}/{_segment(table)}"
@@ -341,28 +416,34 @@ class GridApiClient:
         ``params`` accepts ``filter`` (string or dict), ``page`` and ``limit``.
         Returns ``{"data": [...], "meta": {...}}``.
         """
+        self.verify(project)
         return self._request(
             "GET", self._data_path(project, table) + self._query_string(params)
         )
 
     def get_by_id(self, project, table, id):
         """Fetch one record by primary key. Returns a bare record object."""
+        self.verify(project)
         return self._request("GET", self._data_path(project, table, id))
 
     def post(self, project, table, record):
         """Insert one record or a list. Returns ``{"inserted": n, "records": [...]}``."""
+        self.verify(project)
         return self._request("POST", self._data_path(project, table), record)
 
     def patch(self, project, table, id, changes):
         """Partially update a record. Returns ``{"updated": n, "record": {...}}``."""
+        self.verify(project)
         return self._request("PATCH", self._data_path(project, table, id), changes)
 
     def put(self, project, table, id, record):
         """Replace a record. Returns ``{"updated": n, "record": {...}}``."""
+        self.verify(project)
         return self._request("PUT", self._data_path(project, table, id), record)
 
     def delete(self, project, table, id):
         """Delete a record. Returns ``{"deleted": n, "id": "..."}``."""
+        self.verify(project)
         return self._request("DELETE", self._data_path(project, table, id))
 
     def query(self, project, table, params=None):

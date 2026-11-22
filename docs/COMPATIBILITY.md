@@ -30,8 +30,10 @@ All six SDKs target the same public contract: [openapi/openapi.yaml](../openapi/
   parameters but the Google Sheets provider ignores them.
 - Filtering is exact equality only, as a `col:value` string/map or object.
 - Pagination is `page` + `limit`; `limit` is clamped to 1–100 by the server.
-- SDKs are server-side only. The account-level API key must never ship to
-  browsers or mobile clients; project slugs are not credentials.
+- SDKs are server-side only. `GRIDAPI_API_KEY` and `GRIDAPI_PROJECT_KEY` are
+  both required and must never ship to browsers or mobile clients. Only the
+  account key is sent; the project key is a local scope guard checked against
+  `GET /me/projects`. Project slugs are not credentials.
 - Transient 429s and other safe retries apply to GET/DELETE/PUT; PATCH is
   opt-in; POST is never retried; quota 429 is terminal.
 

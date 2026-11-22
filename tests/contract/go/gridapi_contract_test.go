@@ -26,8 +26,9 @@ import (
 )
 
 const (
-	mockPort = "8794"
-	mockKey  = "gp_live_testkey"
+	mockPort       = "8794"
+	mockKey        = "gp_live_testkey"
+	mockProjectKey = "gapi_live_testproject"
 )
 
 // startMock launches tests/contract/mock-server.mjs and waits for its port.
@@ -65,6 +66,7 @@ func newClient(t *testing.T, base string, opts ...gridapi.Option) *gridapi.Clien
 	t.Helper()
 	all := append([]gridapi.Option{
 		gridapi.WithAPIKey(mockKey),
+		gridapi.WithProjectKey(mockProjectKey),
 		gridapi.WithBaseURL(base),
 		gridapi.WithTimeout(2 * time.Second),
 		gridapi.WithRetryDelay(10 * time.Millisecond),
@@ -76,7 +78,8 @@ func newClient(t *testing.T, base string, opts ...gridapi.Option) *gridapi.Clien
 	return c
 }
 
-// countingTransport records how many HTTP attempts an operation made.
+// countingTransport records how many data-request attempts an operation made.
+// Verification's /me and /me/projects discovery calls are not counted.
 type countingTransport struct {
 	mu   sync.Mutex
 	n    int
@@ -84,9 +87,11 @@ type countingTransport struct {
 }
 
 func (t *countingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	t.mu.Lock()
-	t.n++
-	t.mu.Unlock()
+	if strings.Contains(req.URL.Path, "/users") {
+		t.mu.Lock()
+		t.n++
+		t.mu.Unlock()
+	}
 	return t.base.RoundTrip(req)
 }
 
@@ -292,16 +297,17 @@ func TestContract(t *testing.T) {
 
 	t.Run("errorMapping", func(t *testing.T) {
 		t.Setenv("GRIDAPI_API_KEY", "")
+		t.Setenv("GRIDAPI_PROJECT_KEY", "")
 		if _, err := gridapi.NewClient(); err == nil {
-			t.Fatal("NewClient: expected AuthenticationError for missing key")
+			t.Fatal("NewClient: expected ConfigurationError for missing keys")
 		} else {
-			var auth *gridapi.AuthenticationError
-			if !errors.As(err, &auth) {
-				t.Fatalf("want AuthenticationError, got %T", err)
+			var cfg *gridapi.ConfigurationError
+			if !errors.As(err, &cfg) {
+				t.Fatalf("want ConfigurationError, got %T", err)
 			}
 		}
 
-		bad := newClient(t, base, gridapi.WithAPIKey("bogus-key"))
+		bad := newClient(t, base, gridapi.WithAPIKey("gp_live_bogus"))
 		if _, err := bad.Get(ctx, "acme", "users", nil); err == nil {
 			t.Fatal("expected 401")
 		} else {
@@ -313,19 +319,19 @@ func TestContract(t *testing.T) {
 
 		other := newClient(t, base, gridapi.WithAPIKey("gp_live_otheraccount"))
 		if _, err := other.Get(ctx, "acme", "users", nil); err == nil {
-			t.Fatal("expected 403")
+			t.Fatal("expected authorization failure")
 		} else {
 			var forbidden *gridapi.AuthorizationError
-			if !errors.As(err, &forbidden) || forbidden.Status != 403 {
-				t.Fatalf("want AuthorizationError(403), got %T: %v", err, err)
+			if !errors.As(err, &forbidden) {
+				t.Fatalf("want AuthorizationError, got %T: %v", err, err)
 			}
 		}
 
 		if _, err := client.Get(ctx, "missing", "users", nil); err == nil {
-			t.Fatal("expected 404 project")
+			t.Fatal("expected project not found")
 		} else {
 			var notFound *gridapi.ProjectNotFoundError
-			if !errors.As(err, &notFound) || notFound.Code != "PROJECT_NOT_FOUND" {
+			if !errors.As(err, &notFound) {
 				t.Fatalf("want ProjectNotFoundError, got %T: %v", err, err)
 			}
 		}
@@ -466,11 +472,65 @@ func TestContract(t *testing.T) {
 			t.Fatalf("want TimeoutError, got %T: %v", err, err)
 		}
 	})
+
+	t.Run("both keys required", func(t *testing.T) {
+		t.Setenv("GRIDAPI_API_KEY", "")
+		t.Setenv("GRIDAPI_PROJECT_KEY", "")
+		cases := []struct {
+			name  string
+			opts  []gridapi.Option
+			leaks string
+		}{
+			{"missing account key", []gridapi.Option{gridapi.WithProjectKey(mockProjectKey)}, ""},
+			{"missing project key", []gridapi.Option{gridapi.WithAPIKey(mockKey)}, ""},
+			{"malformed account key", []gridapi.Option{gridapi.WithAPIKey("gapi_live_secret"), gridapi.WithProjectKey(mockProjectKey)}, "gapi_live_secret"},
+			{"malformed project key", []gridapi.Option{gridapi.WithAPIKey(mockKey), gridapi.WithProjectKey("gp_live_secret")}, "gp_live_secret"},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				_, err := gridapi.NewClient(tc.opts...)
+				var cfg *gridapi.ConfigurationError
+				if !errors.As(err, &cfg) {
+					t.Fatalf("want ConfigurationError, got %T: %v", err, err)
+				}
+				if tc.leaks != "" && strings.Contains(err.Error(), tc.leaks) {
+					t.Fatalf("error leaked a key value: %q", err.Error())
+				}
+			})
+		}
+	})
+
+	t.Run("verify", func(t *testing.T) {
+		if err := client.Verify(ctx, "acme"); err != nil {
+			t.Fatalf("Verify(acme): %v", err)
+		}
+		if err := client.Verify(ctx, "ghost"); err == nil {
+			t.Fatal("expected unknown project")
+		} else {
+			var nf *gridapi.ProjectNotFoundError
+			if !errors.As(err, &nf) {
+				t.Fatalf("want ProjectNotFoundError, got %T: %v", err, err)
+			}
+			if strings.Contains(err.Error(), mockKey) || strings.Contains(err.Error(), mockProjectKey) {
+				t.Fatalf("error leaked a key value: %q", err.Error())
+			}
+		}
+		other := newClient(t, base, gridapi.WithAPIKey("gp_live_otheraccount"))
+		if err := other.Verify(ctx, "acme"); err == nil {
+			t.Fatal("expected authorization failure")
+		} else {
+			var forbidden *gridapi.AuthorizationError
+			if !errors.As(err, &forbidden) {
+				t.Fatalf("want AuthorizationError, got %T: %v", err, err)
+			}
+		}
+	})
 }
 
 // Compile-time guard: the typed errors must satisfy the public APIError
 // interface, otherwise errors.As(err, &api) would never match them.
 var (
+	_ gridapi.APIError = (*gridapi.ConfigurationError)(nil)
 	_ gridapi.APIError = (*gridapi.AuthenticationError)(nil)
 	_ gridapi.APIError = (*gridapi.QuotaExceededError)(nil)
 	_ gridapi.APIError = (*gridapi.NetworkError)(nil)
@@ -478,7 +538,7 @@ var (
 )
 
 func ExampleClient_Get() {
-	client, err := gridapi.NewClient(gridapi.WithAPIKey("example-key"))
+	client, err := gridapi.NewClient(gridapi.WithAPIKey("gp_live_example"), gridapi.WithProjectKey("gapi_live_example"))
 	if err != nil {
 		fmt.Println(err)
 		return

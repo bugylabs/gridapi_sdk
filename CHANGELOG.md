@@ -9,7 +9,11 @@ Semantic Versioning.
 ### Added
 
 - Six independently versioned SDKs (TypeScript, Python, Java, .NET, Go, Rust)
-  built from one OpenAPI 3.1 contract and one account-level API key.
+  built from one OpenAPI 3.1 contract and one transport auth model.
+- Two required credentials per SDK: `GRIDAPI_API_KEY` (account key, sent as
+  Bearer) and `GRIDAPI_PROJECT_KEY` (project key, a local scope guard). Data
+  methods verify the account via `/me` and assert project membership via
+  `/me/projects` before issuing requests.
 - Shared in-memory mock backend and per-SDK contract suites covering CRUD,
   filters, pagination, discovery, error mapping, redaction, retries and timeouts.
 - Independent CI and six publish workflows with OIDC trusted publishing where

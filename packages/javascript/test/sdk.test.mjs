@@ -6,6 +6,7 @@ import { after, before, test } from "node:test";
 import {
   GridApiClient,
   GridAPI,
+  ConfigurationError,
   AuthenticationError,
   AuthorizationError,
   RecordNotFoundError,
@@ -20,6 +21,8 @@ import {
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const port = 8790;
 const baseUrl = `http://127.0.0.1:${port}`;
+const ACCOUNT_KEY = "gp_live_testkey";
+const PROJECT_KEY = "gapi_live_testproject";
 let server;
 
 async function waitReady() {
@@ -47,7 +50,7 @@ before(async () => {
 after(() => server?.kill());
 
 function client(extra = {}) {
-  return new GridApiClient({ apiKey: "gp_live_testkey", baseUrl, ...extra });
+  return new GridApiClient({ apiKey: ACCOUNT_KEY, projectKey: PROJECT_KEY, baseUrl, ...extra });
 }
 
 test("exports alias and default-compatible class", () => {
@@ -59,6 +62,30 @@ test("redact strips keys and bearer tokens", () => {
   const clean = redact(text);
   assert.ok(!clean.includes("supersecretkey123"));
   assert.ok(!clean.includes("abc.def"));
+});
+
+test("both keys are required, well-formed and never echoed", async () => {
+  assert.throws(
+    () => new GridApiClient({ apiKey: ACCOUNT_KEY, baseUrl }),
+    ConfigurationError,
+  );
+  assert.throws(
+    () => new GridApiClient({ apiKey: ACCOUNT_KEY, projectKey: "gp_live_wrongprefix", baseUrl }),
+    ConfigurationError,
+  );
+  assert.throws(
+    () => new GridApiClient({ apiKey: "gapi_live_wrongprefix", projectKey: PROJECT_KEY, baseUrl }),
+    ConfigurationError,
+  );
+  const api = client();
+  await api.verify("acme");
+  await assert.rejects(() => api.verify("ghost"), ProjectNotFoundError);
+  try {
+    new GridApiClient({ apiKey: ACCOUNT_KEY, projectKey: "", baseUrl });
+  } catch (error) {
+    assert.ok(!String(error.message).includes("gapi_live_"));
+    assert.ok(!String(error.message).includes("testproject"));
+  }
 });
 
 test("list, exact filter and page+limit pagination", async () => {
@@ -125,9 +152,12 @@ test("CRUD writes return the documented shapes", async () => {
 test("error mapping: auth, project, record, validation, quota", async () => {
   assert.equal((await client().get("acme", "users")).data.length, 3);
 
-  assert.throws(() => new GridApiClient({ apiKey: "", baseUrl }), AuthenticationError);
+  assert.throws(
+    () => new GridApiClient({ apiKey: "", projectKey: PROJECT_KEY, baseUrl }),
+    ConfigurationError,
+  );
   await assert.rejects(
-    () => new GridApiClient({ apiKey: "gp_live_otheraccount", baseUrl }).get("acme", "users"),
+    () => new GridApiClient({ apiKey: "gp_live_otheraccount", projectKey: PROJECT_KEY, baseUrl }).get("acme", "users"),
     AuthorizationError,
   );
   await assert.rejects(() => client().get("missing", "users"), ProjectNotFoundError);
@@ -137,14 +167,14 @@ test("error mapping: auth, project, record, validation, quota", async () => {
     ValidationError,
   );
   await assert.rejects(
-    () => new GridApiClient({ apiKey: "gp_live_testkey", baseUrl: `${baseUrl}/fault/quota` }).get("acme", "users"),
+    () => new GridApiClient({ apiKey: ACCOUNT_KEY, projectKey: PROJECT_KEY, baseUrl: `${baseUrl}/fault/quota` }).get("acme", "users"),
     QuotaExceededError,
   );
 });
 
 test("redacts credentials in thrown errors", async () => {
   const api = new GridApiClient({
-    apiKey: "gp_live_testkey",
+    apiKey: ACCOUNT_KEY, projectKey: PROJECT_KEY,
     baseUrl: `${baseUrl}/fault/echo`,
     maxRetries: 0,
   });
@@ -160,7 +190,7 @@ test("redacts credentials in thrown errors", async () => {
 
 test("retries rate limits but never POST; quota is terminal", async () => {
   const flaky = new GridApiClient({
-    apiKey: "gp_live_testkey",
+    apiKey: ACCOUNT_KEY, projectKey: PROJECT_KEY,
     baseUrl: `${baseUrl}/fault/rate`,
     maxRetries: 2,
     retryDelayMs: 1,
@@ -168,7 +198,7 @@ test("retries rate limits but never POST; quota is terminal", async () => {
   assert.equal((await flaky.get("acme", "users")).data.length, 3);
 
   const noRetry = new GridApiClient({
-    apiKey: "gp_live_testkey",
+    apiKey: ACCOUNT_KEY, projectKey: PROJECT_KEY,
     baseUrl: `${baseUrl}/fault/always-rate`,
     maxRetries: 0,
   });
@@ -178,12 +208,12 @@ test("retries rate limits but never POST; quota is terminal", async () => {
   let calls = 0;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (...args) => {
-    calls += 1;
+    if (String(args[0]).includes("/fault/always-rate/api/v1/acme/users")) calls += 1;
     return originalFetch(...args);
   };
   try {
     const write = new GridApiClient({
-      apiKey: "gp_live_testkey",
+      apiKey: ACCOUNT_KEY, projectKey: PROJECT_KEY,
       baseUrl: `${baseUrl}/fault/always-rate`,
       maxRetries: 2,
       retryDelayMs: 1,
@@ -197,7 +227,7 @@ test("retries rate limits but never POST; quota is terminal", async () => {
 
 test("timeout is enforced and surfaced as TimeoutError", async () => {
   const api = new GridApiClient({
-    apiKey: "gp_live_testkey",
+    apiKey: ACCOUNT_KEY, projectKey: PROJECT_KEY,
     baseUrl: `${baseUrl}/fault/timeout`,
     timeoutMs: 60,
     maxRetries: 0,

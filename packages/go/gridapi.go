@@ -1,9 +1,11 @@
 // Package gridapi is the official, stdlib-only Go client for the GridAPI
 // public REST API (contract: openapi/openapi.yaml in the gridapi_sdk monorepo).
 //
-// One account-level API key authenticates every authorized project; a project
-// slug is a routing/authorization target, never a credential. This SDK is
-// server-side only: never ship the key in a browser bundle or client app.
+// Two keys are required: GRIDAPI_API_KEY (gp_live_, the account key sent as
+// Bearer) and GRIDAPI_PROJECT_KEY (gapi_live_, a local-only scope guard that is
+// never transmitted). Every data method verifies the account once and the
+// project slug/id/name against the account's authorized projects first. This
+// SDK is server-side only: never ship either key in client-side code.
 //
 // Errors are typed and branchable with errors.As:
 //
@@ -32,6 +34,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -208,6 +211,7 @@ type APIError interface {
 // errors.As; Status, Code, Message, Body and Retryable are promoted from the
 // embedded *Error.
 type (
+	ConfigurationError   struct{ *baseError }
 	AuthenticationError  struct{ *baseError }
 	AuthorizationError   struct{ *baseError }
 	ProjectNotFoundError struct{ *baseError }
@@ -225,6 +229,7 @@ type (
 // variables and then overridden by any Option passed to NewClient.
 type Config struct {
 	APIKey      string
+	ProjectKey  string
 	BaseURL     string
 	Timeout     time.Duration
 	MaxRetries  int
@@ -236,8 +241,12 @@ type Config struct {
 // Option customizes a Client.
 type Option func(*Config)
 
-// WithAPIKey overrides GRIDAPI_API_KEY.
+// WithAPIKey overrides GRIDAPI_API_KEY (the account key sent as Bearer).
 func WithAPIKey(key string) Option { return func(c *Config) { c.APIKey = key } }
+
+// WithProjectKey overrides GRIDAPI_PROJECT_KEY. It is a local scope guard only:
+// the public REST API has no project-key header, so this value is never sent.
+func WithProjectKey(key string) Option { return func(c *Config) { c.ProjectKey = key } }
 
 // WithBaseURL overrides GRIDAPI_BASE_URL.
 func WithBaseURL(base string) Option { return func(c *Config) { c.BaseURL = base } }
@@ -261,20 +270,28 @@ func WithHTTPClient(h *http.Client) Option { return func(c *Config) { c.HTTPClie
 // Client is a GridAPI client. It is safe for concurrent use.
 type Client struct {
 	apiKey      string
+	projectKey  string
 	baseURL     string
 	timeout     time.Duration
 	maxRetries  int
 	retryDelay  time.Duration
 	retryWrites bool
 	httpClient  *http.Client
+
+	verifyOnce sync.Once
+	verifyErr  error
+	projectsMu sync.Mutex
+	verified   map[string]struct{}
 }
 
-// NewClient reads GRIDAPI_API_KEY (required), GRIDAPI_BASE_URL and
-// GRIDAPI_TIMEOUT_MS, then applies opts. It returns an AuthenticationError when
-// no API key is available.
+// NewClient reads GRIDAPI_API_KEY, GRIDAPI_PROJECT_KEY, GRIDAPI_BASE_URL and
+// GRIDAPI_TIMEOUT_MS, then applies opts. Both keys are required and shaped like
+// gp_live_... / gapi_live_...; an absent or malformed key returns a
+// ConfigurationError. Key values never appear in error messages.
 func NewClient(opts ...Option) (*Client, error) {
 	cfg := Config{
 		APIKey:     os.Getenv("GRIDAPI_API_KEY"),
+		ProjectKey: os.Getenv("GRIDAPI_PROJECT_KEY"),
 		BaseURL:    os.Getenv("GRIDAPI_BASE_URL"),
 		Timeout:    DefaultTimeout,
 		MaxRetries: 2,
@@ -291,10 +308,11 @@ func NewClient(opts ...Option) (*Client, error) {
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	if strings.TrimSpace(cfg.APIKey) == "" {
-		return nil, &AuthenticationError{&Error{
-			Message: "GridAPI: missing API key. Set GRIDAPI_API_KEY or use WithAPIKey.",
-		}}
+	if err := requiredKey("GRIDAPI_API_KEY", cfg.APIKey, "gp_live_", "WithAPIKey"); err != nil {
+		return nil, err
+	}
+	if err := requiredKey("GRIDAPI_PROJECT_KEY", cfg.ProjectKey, "gapi_live_", "WithProjectKey"); err != nil {
+		return nil, err
 	}
 	base := strings.TrimRight(cfg.BaseURL, "/")
 	if base == "" {
@@ -314,17 +332,92 @@ func NewClient(opts ...Option) (*Client, error) {
 	}
 	return &Client{
 		apiKey:      cfg.APIKey,
+		projectKey:  cfg.ProjectKey,
 		baseURL:     base,
 		timeout:     cfg.Timeout,
 		maxRetries:  cfg.MaxRetries,
 		retryDelay:  cfg.RetryDelay,
 		retryWrites: cfg.RetryWrites,
 		httpClient:  cfg.HTTPClient,
+		verified:    make(map[string]struct{}),
 	}, nil
+}
+
+// requiredKey validates a credential's presence and shape without ever
+// echoing the value. env/option are names only, never secrets.
+func requiredKey(env, key, prefix, option string) error {
+	if strings.TrimSpace(key) == "" {
+		return &ConfigurationError{&Error{
+			Message: "GridAPI: missing key. Set " + env + " or use " + option + ".",
+		}}
+	}
+	if !strings.HasPrefix(key, prefix) || len(key) == len(prefix) {
+		return &ConfigurationError{&Error{
+			Message: "GridAPI: " + env + " must be a " + prefix + "... key.",
+		}}
+	}
+	return nil
+}
+
+// Verify checks the account once, then checks that project (a slug, id or name)
+// is one of the account's authorized projects. The second check is cached per
+// project. Discovery methods call do directly, so they never re-enter Verify.
+func (c *Client) Verify(ctx context.Context, project string) error {
+	c.verifyOnce.Do(func() {
+		me, err := c.GetMe(ctx)
+		if err != nil {
+			c.verifyErr = err
+			return
+		}
+		if !me.Authenticated {
+			c.verifyErr = &AuthenticationError{&Error{
+				Message: "GridAPI: account key is not authenticated.",
+			}}
+		}
+	})
+	if c.verifyErr != nil {
+		return c.verifyErr
+	}
+	if project == "" {
+		return nil
+	}
+	c.projectsMu.Lock()
+	_, ok := c.verified[project]
+	c.projectsMu.Unlock()
+	if ok {
+		return nil
+	}
+
+	projects, err := c.ListProjects(ctx)
+	if err != nil {
+		return err
+	}
+	allowed := false
+	for _, p := range projects {
+		if p.Slug == project || p.ID == project || p.Name == project {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		if len(projects) == 0 {
+			return &AuthorizationError{&Error{
+				Message: "GridAPI: no projects are authorized for this account and project key.",
+			}}
+		}
+		return &ProjectNotFoundError{&Error{Message: "Project not found: " + project}}
+	}
+	c.projectsMu.Lock()
+	c.verified[project] = struct{}{}
+	c.projectsMu.Unlock()
+	return nil
 }
 
 // Get lists records in a table, optionally filtered and paginated.
 func (c *Client) Get(ctx context.Context, project, table string, params *QueryOptions) (*ListResponse[Record], error) {
+	if err := c.Verify(ctx, project); err != nil {
+		return nil, err
+	}
 	raw, err := c.do(ctx, http.MethodGet, dataPath(project, table)+buildQuery(params), nil)
 	if err != nil {
 		return nil, err
@@ -339,6 +432,9 @@ func (c *Client) Query(ctx context.Context, project, table string, params *Query
 
 // GetByID retrieves one record by its primary key.
 func (c *Client) GetByID(ctx context.Context, project, table, id string) (*Record, error) {
+	if err := c.Verify(ctx, project); err != nil {
+		return nil, err
+	}
 	raw, err := c.do(ctx, http.MethodGet, recordPath(project, table, id), nil)
 	if err != nil {
 		return nil, err
@@ -349,6 +445,9 @@ func (c *Client) GetByID(ctx context.Context, project, table, id string) (*Recor
 // Post inserts one record (pass a Record) or several (pass a []Record).
 // POST is never retried.
 func (c *Client) Post(ctx context.Context, project, table string, records any) (*CreateResponse[Record], error) {
+	if err := c.Verify(ctx, project); err != nil {
+		return nil, err
+	}
 	raw, err := c.do(ctx, http.MethodPost, dataPath(project, table), records)
 	if err != nil {
 		return nil, err
@@ -359,6 +458,9 @@ func (c *Client) Post(ctx context.Context, project, table string, records any) (
 // Patch partially updates one record. It is retried only when WithRetryWrites
 // is enabled.
 func (c *Client) Patch(ctx context.Context, project, table, id string, changes Record) (*UpdateResponse[Record], error) {
+	if err := c.Verify(ctx, project); err != nil {
+		return nil, err
+	}
 	raw, err := c.do(ctx, http.MethodPatch, recordPath(project, table, id), changes)
 	if err != nil {
 		return nil, err
@@ -368,6 +470,9 @@ func (c *Client) Patch(ctx context.Context, project, table, id string, changes R
 
 // Put replaces one record. It is always retried on transient failures.
 func (c *Client) Put(ctx context.Context, project, table, id string, record Record) (*UpdateResponse[Record], error) {
+	if err := c.Verify(ctx, project); err != nil {
+		return nil, err
+	}
 	raw, err := c.do(ctx, http.MethodPut, recordPath(project, table, id), record)
 	if err != nil {
 		return nil, err
@@ -377,6 +482,9 @@ func (c *Client) Put(ctx context.Context, project, table, id string, record Reco
 
 // Delete removes one record by its primary key.
 func (c *Client) Delete(ctx context.Context, project, table, id string) (*DeleteResponse, error) {
+	if err := c.Verify(ctx, project); err != nil {
+		return nil, err
+	}
 	raw, err := c.do(ctx, http.MethodDelete, recordPath(project, table, id), nil)
 	if err != nil {
 		return nil, err
@@ -733,8 +841,13 @@ func redact(s string) string {
 }
 
 func (c *Client) redact(s string) string {
-	if c != nil && c.apiKey != "" {
-		s = strings.ReplaceAll(s, c.apiKey, "[REDACTED]")
+	if c != nil {
+		if c.apiKey != "" {
+			s = strings.ReplaceAll(s, c.apiKey, "[REDACTED]")
+		}
+		if c.projectKey != "" {
+			s = strings.ReplaceAll(s, c.projectKey, "[REDACTED]")
+		}
 	}
 	return redact(s)
 }

@@ -1,10 +1,10 @@
 # GridAPI .NET SDK
 
-Official server-side .NET SDK for the [GridAPI public REST API](../../openapi/openapi.yaml). It is a thin, dependency-free wrapper over `System.Net.Http` and `System.Text.Json`: one account-level API key authenticates every project you own or belong to, and every operation is exposed as an `Async` method that accepts a `CancellationToken`.
+Official server-side .NET SDK for the [GridAPI public REST API](../../openapi/openapi.yaml). It is a thin, dependency-free wrapper over `System.Net.Http` and `System.Text.Json`: two required keys — an account key that authenticates the request and a project key that guards local scope — and every operation is exposed as an `Async` method that accepts a `CancellationToken`.
 
 Source Available | Proprietary | Non-Commercial Use Only — Copyright (c) 2026 BugyLabs. All Rights Reserved. Personal, educational, research and non-commercial evaluation use only. Commercial use requires a separate written agreement with BugyLabs. See ../../LICENSE.
 
-> **Server-side only.** The SDK sends your account-level API key in an `Authorization: Bearer` header. Never ship the key in a browser bundle, mobile/desktop app, or any code an end user can inspect. The project slug is a routing/authorization target, never a credential.
+> **Server-side only.** The SDK sends only the account key in an `Authorization: Bearer` header. The **project key is never transmitted, logged or echoed**: the public REST API has no project-key header, so the SDK uses it strictly as a local scope guard. Never ship either key in a browser bundle, mobile/desktop app, or any code an end user can inspect.
 
 Repository: https://github.com/bugylabs/gridapi-sdk
 
@@ -24,6 +24,7 @@ Repository: https://github.com/bugylabs/gridapi-sdk
 | Get a table schema | `GetSchemaAsync` | `GET /api/v1/me/projects/{project}/docs` |
 | Get authenticated account info | `GetMeAsync` | `GET /api/v1/me` |
 | Get quota/usage info | `GetUsageAsync` | `GET /api/v1/me/usage` |
+| Verify keys and project scope | `VerifyAsync` | `GET /api/v1/me`, `GET /api/v1/me/projects` |
 
 Every method has an `Async` suffix and an optional trailing `CancellationToken cancellationToken = default`. Generic overloads (`GetAsync<T>`, `GetByIdAsync<T>`, `PostAsync<T>`, `PatchAsync<T>`, `PutAsync<T>`, `QueryAsync<T>`) let you map rows to your own class deriving from `GridRecord` with a parameterless constructor.
 
@@ -48,7 +49,9 @@ dotnet add reference packages/dotnet/GridAPI/GridAPI.csproj
 ```csharp
 using GridAPI;
 
-using var client = new GridApiClient(); // reads GRIDAPI_API_KEY from the environment
+using var client = new GridApiClient(); // reads GRIDAPI_API_KEY and GRIDAPI_PROJECT_KEY from the environment
+
+await client.VerifyAsync("acme"); // optional, but fails fast on bad keys or scope
 
 var projects = await client.ListProjectsAsync();
 foreach (var project in projects)
@@ -60,9 +63,14 @@ Console.WriteLine($"{page.Data.Count} of {page.Meta.Total} users on this page");
 
 ## Authentication
 
-Authentication uses a single **account-level API key** supplied in the `Authorization: Bearer` header. It is required and is read from `GRIDAPI_API_KEY` (or passed as `GridApiOptions.ApiKey`). The constructor throws `AuthenticationError` if no key is present.
+Authentication uses **two required keys**, both validated at construction (missing, empty, wrong-prefix, or empty-suffix values throw `ConfigurationException`; key values are never included in the error):
 
-The **project slug** is not a credential. It is a routing/authorization target: the server checks whether the key's account is authorized for that project. Keep the key server-side and store it in a secret manager, never in source control or client code.
+- `GRIDAPI_API_KEY` (`gp_live_...`, or `GridApiOptions.ApiKey`) — the account key. This is the **only** key sent, as `Authorization: Bearer <account key>`.
+- `GRIDAPI_PROJECT_KEY` (`gapi_live_...`, or `GridApiOptions.ProjectKey`) — the project key. It is a **local scope guard only**: the public REST API has no project-key header, so the SDK never transmits it. It is never logged or echoed.
+
+`VerifyAsync(project)` checks `/api/v1/me` for authentication, then `/api/v1/me/projects` to confirm the project matches its slug, id, or name. The account check is cached per client and verified projects are remembered. Every data method (`GetAsync`, `PostAsync`, `PatchAsync`, `PutAsync`, `DeleteAsync`, `CountAsync`, …) calls `VerifyAsync` for its project first; discovery methods (`ListProjectsAsync`, `ListTablesAsync`, `GetSchemaAsync`, `GetMeAsync`, `GetUsageAsync`) serve the check itself and never re-trigger it.
+
+The **project slug** is not a credential. It is a routing/authorization target: the server checks whether the key's account is authorized for that project. Keep both keys server-side and store them in a secret manager, never in source control or client code.
 
 Error messages and response bodies are passed through `GridApiError`, which redacts Bearer tokens and `gp_live_`/`gapi_live_` keys before they reach a log or user (`GridApiRedaction.Redact`).
 
@@ -70,15 +78,17 @@ Error messages and response bodies are passed through `GridApiError`, which reda
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `GRIDAPI_API_KEY` | yes | — | Account-level API key. |
+| `GRIDAPI_API_KEY` | yes | — | Account-level API key (`gp_live_...`); sent as Bearer token. |
+| `GRIDAPI_PROJECT_KEY` | yes | — | Project key (`gapi_live_...`); local scope guard, never transmitted. |
 | `GRIDAPI_BASE_URL` | no | `https://api.gridapi.in` | API base URL, including an optional path prefix. |
 | `GRIDAPI_TIMEOUT_MS` | no | `30000` | Per-attempt request timeout in milliseconds. |
 
-All three can be overridden per client through `GridApiOptions`, along with retry settings:
+All four can be overridden per client through `GridApiOptions`, along with retry settings:
 
 | `GridApiOptions` property | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `ApiKey` | `string?` | `GRIDAPI_API_KEY` | Explicit key; overrides the environment. |
+| `ApiKey` | `string?` | `GRIDAPI_API_KEY` | Explicit account key; overrides the environment. |
+| `ProjectKey` | `string?` | `GRIDAPI_PROJECT_KEY` | Explicit project key; overrides the environment. Never transmitted. |
 | `BaseUrl` | `string?` | `GRIDAPI_BASE_URL` or `https://api.gridapi.in` | Base URL; a trailing `/` is trimmed. |
 | `TimeoutMs` | `int?` | `GRIDAPI_TIMEOUT_MS` or `30000` | Per-attempt timeout in ms. |
 | `MaxRetries` | `int?` | `2` | Retries for transient failures on safe methods. |
@@ -90,13 +100,14 @@ All three can be overridden per client through `GridApiOptions`, along with retr
 ```csharp
 using GridAPI;
 
-// From the environment (GRIDAPI_API_KEY required):
+// From the environment (both GRIDAPI_API_KEY and GRIDAPI_PROJECT_KEY required):
 using var client = new GridApiClient();
 
 // Or configure explicitly:
 using var configured = new GridApiClient(new GridApiOptions
 {
-    ApiKey = keyFromYourSecretStore,
+    ApiKey = accountKeyFromYourSecretStore,
+    ProjectKey = projectKeyFromYourSecretStore,
     BaseUrl = "https://api.gridapi.in",
     TimeoutMs = 10_000,
     MaxRetries = 2,
@@ -238,7 +249,7 @@ AccountInfo me = await client.GetMeAsync();
 UsageInfo usage = await client.GetUsageAsync();
 ```
 
-`ListTablesAsync` resolves a project by slug, id, or name and throws `ProjectNotFoundError` if it does not exist. `GetSchemaAsync` throws `TableNotFoundError` if the table is absent. `UsageInfo` is a `Dictionary<string, JsonElement>`; read values with `usage["totalApiCallsLeft"].GetInt32()`.
+Discovery calls do not re-trigger `VerifyAsync` — they are the discovery the check itself uses. `VerifyAsync("acme")` throws `AuthenticationError` if the account is not authenticated, `AuthorizationError` if the account has no authorized projects, and `ProjectNotFoundError` if the project is absent from a non-empty list. `ListTablesAsync` resolves a project by slug, id, or name and throws `ProjectNotFoundError` if it does not exist. `GetSchemaAsync` throws `TableNotFoundError` if the table is absent. `UsageInfo` is a `Dictionary<string, JsonElement>`; read values with `usage["totalApiCallsLeft"].GetInt32()`.
 
 ## Error handling
 
@@ -246,9 +257,10 @@ All SDK exceptions derive from `GridApiError : Exception` and expose `int? Statu
 
 | Exception | When |
 | --- | --- |
-| `AuthenticationError` | Missing key (constructor) or HTTP 401. |
-| `AuthorizationError` | HTTP 403 — key is not authorized for the project. |
-| `ProjectNotFoundError` | HTTP 404 for a project (or unknown project in `ListTablesAsync`). |
+| `ConfigurationException` | A key is missing, has the wrong prefix, or has an empty suffix (construction). |
+| `AuthenticationError` | HTTP 401, or the account check reports `authenticated: false`. |
+| `AuthorizationError` | HTTP 403, or `VerifyAsync` finds no authorized projects. |
+| `ProjectNotFoundError` | Unknown project in `VerifyAsync`/a data method, HTTP 404 for a project, or unknown project in `ListTablesAsync`. |
 | `TableNotFoundError` | HTTP 404 for a sheet/table (also thrown by `GetSchemaAsync`). |
 | `RecordNotFoundError` | HTTP 404 for a single record. |
 | `ValidationError` | HTTP 400–422 (bad filter, empty payload, invalid input). |
@@ -329,6 +341,7 @@ A runnable version lives in [`examples/dotnet`](../../examples/dotnet). Run it w
 
 ```sh
 export GRIDAPI_API_KEY='gp_live_...'
+export GRIDAPI_PROJECT_KEY='gapi_live_...'
 dotnet run --project examples/dotnet
 ```
 

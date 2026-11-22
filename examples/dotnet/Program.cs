@@ -1,11 +1,13 @@
 /**
  * Runnable GridAPI .NET example. Configuration comes only from the environment:
- *   GRIDAPI_API_KEY  (required)
- *   GRIDAPI_BASE_URL (optional, defaults to https://api.gridapi.in)
- *   GRIDAPI_TIMEOUT_MS (optional, defaults to 30000)
+ *   GRIDAPI_API_KEY      (required, gp_live_... — sent as the Bearer token)
+ *   GRIDAPI_PROJECT_KEY  (required, gapi_live_... — local scope guard, never transmitted)
+ *   GRIDAPI_BASE_URL     (optional, defaults to https://api.gridapi.in)
+ *   GRIDAPI_TIMEOUT_MS   (optional, defaults to 30000)
  *
  * Run:
- *   export GRIDAPI_API_KEY='...'
+ *   export GRIDAPI_API_KEY='gp_live_...'
+ *   export GRIDAPI_PROJECT_KEY='gapi_live_...'
  *   dotnet run --project examples/dotnet
  */
 using System.Text.Json;
@@ -17,6 +19,9 @@ var table = Environment.GetEnvironmentVariable("GRIDAPI_TABLE") ?? "users";
 try
 {
     using var client = new GridApiClient();
+
+    // Fails fast on bad keys or a project this account cannot access.
+    await client.VerifyAsync(project);
 
     var me = await client.GetMeAsync();
     Console.WriteLine($"Authenticated: {me.Authenticated}");

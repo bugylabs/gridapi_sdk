@@ -2,9 +2,9 @@
 
 Source Available | Proprietary | Non-Commercial Use Only — Copyright (c) 2026 BugyLabs. All Rights Reserved. Personal, educational, research and non-commercial evaluation use only. Commercial use requires a separate written agreement with BugyLabs. See ../../LICENSE.
 
-Official Java client for the [GridAPI public REST API](../../openapi/openapi.yaml). One account-level API key authenticates every project you own or have membership in; the project slug is a routing/authorization target, never a credential. The SDK is server-side only and has no runtime dependencies beyond the JDK.
+Official Java client for the [GridAPI public REST API](../../openapi/openapi.yaml). Two keys are required: an account-level API key (`gp_live_...`) that authenticates every project you own or have membership in, and a project key (`gapi_live_...`) that acts as a local scope guard. The project slug passed to each call is a routing/authorization target, never a credential. The SDK is server-side only and has no runtime dependencies beyond the JDK.
 
-> **Server-side only.** The key is an account-level secret. Keep it on a trusted server and never bundle it into a browser, mobile app, or any other client-facing artifact. The server resolves the caller's role per project; this SDK never makes authorization decisions.
+> **Server-side only.** Both keys are secrets. Keep them on a trusted server and never bundle them into a browser, mobile app, or any other client-facing artifact. Only the account key is sent to the API; the project key is never transmitted, logged, or echoed. The public REST API has no project-key header, so the SDK confirms project access with `GET /api/v1/me/projects`. The server resolves the caller's role per project; this SDK does not make authorization decisions from the project key.
 
 ## Requirements
 
@@ -49,9 +49,13 @@ Filtering is exact equality; pagination is `page` + `limit`. Sorting and search 
 
 ## Authentication
 
-Set `GRIDAPI_API_KEY` to your account-level key. Every request sends it as `Authorization: Bearer <key>`. The key authenticates the account; the project slug passed to each call only selects which authorized project to route to. A valid key does not grant access to a project you are not a member of — the server returns `AuthorizationError` (403) or `ProjectNotFoundError` (404) in that case.
+Set `GRIDAPI_API_KEY` to your account-level key (`gp_live_...`) and `GRIDAPI_PROJECT_KEY` to your project key (`gapi_live_...`). Both are required at construction; a missing, blank, or wrongly-prefixed key throws `ConfigurationException` before any network call.
 
-Never commit the key, log it, or place it in a client-side artifact. SDK errors redact `Bearer` values and `gp_live_`/`gapi_live_` key prefixes before they can reach a log.
+Only the account key is sent as `Authorization: Bearer <key>`. The project key is a **local scope guard only**: the public REST API has no project-key header, so the project key is never transmitted, logged, or echoed. Before every data request the SDK calls `GET /api/v1/me` (once per client, cached) and rejects an unauthenticated account with `AuthenticationError`. When a project is supplied it calls `GET /api/v1/me/projects` (once per project, cached) and confirms the slug, id, or name is present. An empty projects list raises `AuthorizationError`; a non-empty list without the project raises `ProjectNotFoundError`. A valid key does not grant access to a project you are not a member of. Discovery methods (`listProjects`, `listTables`, `getSchema`, `getMe`, `getUsage`) do not verify, so there is no recursion.
+
+You can also call `verify()` or `verify(project)` explicitly; data methods call it for you.
+
+Never commit either key, log it, or place it in a client-side artifact. SDK errors redact `Bearer` values and `gp_live_`/`gapi_live_` key prefixes before they can reach a log.
 
 ## Environment variables
 
@@ -59,7 +63,8 @@ The no-argument constructor reads these once, at construction time:
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `GRIDAPI_API_KEY` | yes | — | Account-level API key |
+| `GRIDAPI_API_KEY` | yes | — | Account-level API key (`gp_live_...`), sent as Bearer token |
+| `GRIDAPI_PROJECT_KEY` | yes | — | Project key (`gapi_live_...`), local scope guard, never transmitted |
 | `GRIDAPI_BASE_URL` | no | `https://api.gridapi.in` | API base URL |
 | `GRIDAPI_TIMEOUT_MS` | no | `30000` | Connect and request timeout in milliseconds |
 
@@ -68,6 +73,7 @@ Every value can be overridden with the builder; the builder also owns retry sett
 ```java
 GridApiClient client = GridApiClient.builder()
     .apiKey(System.getenv("GRIDAPI_API_KEY"))
+    .projectKey(System.getenv("GRIDAPI_PROJECT_KEY"))
     .baseUrl("https://api.gridapi.in")
     .timeoutMs(10_000)
     .maxRetries(2)        // default 2
@@ -80,16 +86,18 @@ Blank/negative timeout values fall back to `30000`; negative retry counts and de
 
 ## Initialization
 
-Three constructors are available:
+Five constructors are available:
 
 ```java
-GridApiClient fromEnv = new GridApiClient();                        // GRIDAPI_* env vars
-GridApiClient withKey = new GridApiClient("gp_live_...");           // env for the rest
-GridApiClient explicit = new GridApiClient("gp_live_...", "https://api.gridapi.in", 10_000);
-GridApiClient built = GridApiClient.builder().apiKey("gp_live_...").build();
+GridApiClient fromEnv = new GridApiClient();                        // both keys from env
+GridApiClient withKey = new GridApiClient("gp_live_...");           // account key explicit, project key from env
+GridApiClient withBoth = new GridApiClient("gp_live_...", "gapi_live_...");
+GridApiClient explicit = new GridApiClient("gp_live_...", "gapi_live_...", "https://api.gridapi.in", 10_000);
+GridApiClient built = GridApiClient.builder()
+    .apiKey("gp_live_...").projectKey("gapi_live_...").build();
 ```
 
-A missing or blank key throws `GridApiError.AuthenticationError` **at construction**, before any network call.
+A missing, blank, or wrongly-prefixed key throws `ConfigurationException` **at construction**, before any network call. Error messages never contain key values.
 
 ## Quick start
 
@@ -104,7 +112,8 @@ import java.util.Map;
 
 public final class Quickstart {
     public static void main(String[] args) {
-        GridApiClient client = new GridApiClient(); // reads GRIDAPI_* env vars
+        // Reads GRIDAPI_API_KEY and GRIDAPI_PROJECT_KEY from the environment.
+        GridApiClient client = new GridApiClient();
 
         ListResponse<GridRecord> users = client.get("acme", "users",
             new QueryOptions("status:active", 1, 10));
@@ -264,13 +273,14 @@ System.out.println(usage.totalApiCallsUsed() + " / " + usage.totalApiCallsLeft()
 
 ## Error handling
 
-Every failure throws `GridApiError` (an unchecked `RuntimeException`) or one of its nested subclasses:
+Every failure throws `GridApiError` (an unchecked `RuntimeException`) or one of its nested subclasses. Configuration failures throw `ConfigurationException`, a `GridApiError` subtype:
 
 | Class | Typical cause |
 | --- | --- |
-| `GridApiError.AuthenticationError` | Missing key at construction, or HTTP 401 |
-| `GridApiError.AuthorizationError` | HTTP 403 — key is valid but lacks access to the project |
-| `GridApiError.ProjectNotFoundError` | Unknown/unauthorized project (HTTP 404) |
+| `ConfigurationException` | Missing/blank/wrongly-prefixed key at construction |
+| `GridApiError.AuthenticationError` | HTTP 401, or `verify()` when the account is not authenticated |
+| `GridApiError.AuthorizationError` | HTTP 403, or `verify()` when the account has no authorized projects |
+| `GridApiError.ProjectNotFoundError` | Unknown/unauthorized project (HTTP 404 or failed `verify()`) |
 | `GridApiError.TableNotFoundError` | Unknown sheet/endpoint (HTTP 404) |
 | `GridApiError.RecordNotFoundError` | Unknown row id (HTTP 404) |
 | `GridApiError.ValidationError` | HTTP 400/422, e.g. an unknown column |
@@ -308,6 +318,7 @@ Credentials are redacted from `getMessage()` and `getBody()`.
 ```java
 GridApiClient noRetries = GridApiClient.builder()
     .apiKey(System.getenv("GRIDAPI_API_KEY"))
+    .projectKey(System.getenv("GRIDAPI_PROJECT_KEY"))
     .maxRetries(0)
     .timeoutMs(5_000)
     .build();

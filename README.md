@@ -10,8 +10,8 @@ and non-commercial evaluation use is permitted. Commercial use requires a
 separate written agreement with BugyLabs. See [LICENSE](LICENSE).
 
 - One backend contract: [`openapi/openapi.yaml`](openapi/openapi.yaml) (canonical) and generated [`openapi/openapi.json`](openapi/openapi.json).
-- One auth model: `Authorization: Bearer <GRIDAPI_API_KEY>`. The key is account-level; a project slug is a routing/authorization target, never a credential.
-- Server-side authorization: the server resolves the caller's role per project; SDKs never make authorization decisions.
+- One transport auth model: `Authorization: Bearer <GRIDAPI_API_KEY>` with an account-level key; a project slug is a routing/authorization target, never a credential.
+- Two required credentials: `GRIDAPI_API_KEY` (`gp_live_...`) and `GRIDAPI_PROJECT_KEY` (`gapi_live_...`). Only the account key is sent. The project key is a local scope guard because the public REST API has no project-key header; data methods verify the account via `GET /me` and assert the requested project appears in `GET /me/projects`. The server remains authoritative for all authorization decisions.
 - Six independent packages and release processes in one repository.
 
 ## Packages
@@ -49,13 +49,32 @@ terminal; transient 429s are retried only for safe methods with `Retry-After`.
 ```ts
 import { GridApiClient } from "@gridapi/sdk";
 
-const grid = new GridApiClient({ apiKey: process.env.GRIDAPI_API_KEY! });
+// Reads GRIDAPI_API_KEY and GRIDAPI_PROJECT_KEY from the environment.
+const grid = new GridApiClient();
 const { data, meta } = await grid.get("acme", "users", {
   filter: { status: "active" },
   limit: 10,
 });
 console.log(data, meta.total);
 ```
+
+## Authentication
+
+Set both variables before creating a client (or pass the equivalent options in
+your language):
+
+```bash
+export GRIDAPI_API_KEY=gp_live_...        # account key, sent as Bearer token
+export GRIDAPI_PROJECT_KEY=gapi_live_...  # project key, local scope guard only
+```
+
+A missing or malformed key fails at construction with a configuration error.
+Data operations verify once that the account key is live and that the requested
+project is in `GET /me/projects` (an empty project list is an authorization
+error; an unknown slug is a not-found error). You can trigger this check
+explicitly with `verify(project)` / `VerifyAsync(project)` / `Verify(ctx,
+project)` as appropriate for the language. Neither key value is ever logged or
+included in error messages.
 
 ## Verify locally
 

@@ -7,9 +7,9 @@ configuration, and method-aware retries.
 
 Source Available | Proprietary | Non-Commercial Use Only — Copyright (c) 2026 BugyLabs. All Rights Reserved. Personal, educational, research and non-commercial evaluation use only. Commercial use requires a separate written agreement with BugyLabs. See ../../LICENSE.
 
-> **Server-side only.** The API key is an account-level secret. Never embed it
-> in a browser bundle, mobile app, or any other client that ships to end users.
-> Keep it in an environment variable on your server.
+> **Server-side only.** Both keys are secrets. Never embed them in a browser
+> bundle, mobile app, or any other client that ships to end users. Keep them in
+> environment variables on your server.
 
 The crate identifier used in Rust source is `gridapi_sdk` (underscores); the
 dependency name in `Cargo.toml` is `gridapi-sdk` (hyphens).
@@ -28,8 +28,11 @@ dependency name in `Cargo.toml` is `gridapi-sdk` (hyphens).
 - **Safe retries** with `Retry-After` support and exponential backoff; writes
   are retried only when explicitly allowed.
 - **Redaction** of keys and bearer tokens in error messages (`redact`).
-- **One auth model:** a single account-level key; the project slug is a routing
-  and authorization target, never a credential.
+- **Two-key model:** an account key authenticates requests; a separate project
+  key is a local scope guard. The project slug is a routing/authorization
+  target, never a credential.
+- **Project verification:** data methods call `verify(project)` first; the
+  account check and verified project names are cached per client.
 
 ## Install
 
@@ -54,33 +57,39 @@ grant commercial rights; see [License](#license).
 - Rust **edition 2021** (the crate's `Cargo.toml` declares `edition = "2021"`).
 - A stable Rust toolchain (the crate builds on stable; no nightly features).
 
-## Authentication
+## Authentication and project scope
 
-Every request sends `Authorization: Bearer <GRIDAPI_API_KEY>`.
+Two keys are required at build time:
 
-- The key is an **account-level** secret and authenticates every project the
-  account may access.
-- A **project slug** (for example `acme`) is a routing/authorization target
-  only. It is not a credential and must never be treated as one.
-- Keys are **server-side only**. Do not ship the key to a browser or mobile
-  client, commit it, or print it in logs. Error messages are passed through
-  `redact`, but you should still avoid logging raw configuration.
+- `GRIDAPI_API_KEY` (`gp_live_...`) — the **account key**. It is the only value
+  sent to the server, as `Authorization: Bearer <account key>`.
+- `GRIDAPI_PROJECT_KEY` (`gapi_live_...`) — the **project key**. It is a local
+  scope guard only: the public REST API has no project-key header, so this SDK
+  never transmits, logs or echoes it. It is validated and then discarded.
+
+Both must be present, use the correct prefix and have a non-empty suffix,
+otherwise `build()` returns `GridError::Configuration`. That error contains no
+key values. A **project slug** (for example `acme`) is a routing/authorization
+target, not a credential. Keys are **server-side only**: do not ship them to a
+browser or mobile client, commit them, or print them in logs.
 
 ## Environment variables
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `GRIDAPI_API_KEY` | Yes | — | Account-level API key (`Bearer` token). |
+| `GRIDAPI_API_KEY` | Yes | — | Account key (`gp_live_...`), sent as `Bearer`. |
+| `GRIDAPI_PROJECT_KEY` | Yes | — | Project key (`gapi_live_...`), local scope guard only; never transmitted. |
 | `GRIDAPI_BASE_URL` | No | `https://api.gridapi.in` | API root; trailing slashes are removed. |
 | `GRIDAPI_TIMEOUT_MS` | No | `30000` | Per-request timeout in milliseconds. |
 
-Values passed to `ClientBuilder` take precedence over the environment. A
-missing or empty `GRIDAPI_API_KEY` is an error at build time.
+Values passed to `ClientBuilder` take precedence over the environment. Missing,
+empty or malformed keys are `GridError::Configuration` errors at build time.
 
 ## Initialization
 
-`Client::from_env()` builds a client from the three environment variables.
-Reuse one client across requests — it owns a pooled HTTP agent.
+`Client::from_env()` builds a client from the four environment variables.
+Reuse one client across requests — it owns a pooled HTTP agent and the
+verification cache.
 
 ```rust
 use gridapi_sdk::Client;
@@ -99,6 +108,7 @@ use gridapi_sdk::ClientBuilder;
 fn main() -> Result<(), gridapi_sdk::GridError> {
     let client = ClientBuilder::new()
         .api_key("gp_live_...")
+        .project_key("gapi_live_...")
         .base_url("https://api.gridapi.in")
         .timeout_ms(10_000)
         .max_retries(3)
@@ -112,14 +122,36 @@ fn main() -> Result<(), gridapi_sdk::GridError> {
 Builder defaults: `max_retries = 2`, `retry_delay_ms = 500`,
 `retry_writes = false`; unset key/base URL/timeout fall back to the environment.
 
+## Project verification
+
+Every data method (`get`, `query`, `get_by_id`, `post`, `patch`, `put`,
+`delete`, `count`) calls `verify(Some(project))` before its request. You can
+also call it yourself:
+
+```rust
+client.verify(None)?;             // authenticate the account once
+client.verify(Some("acme"))?;     // confirm the project is in scope
+```
+
+`verify` calls `GET /api/v1/me` (a non-true `authenticated` field yields
+`GridError::Authentication`), then, for a named project, `GET
+/api/v1/me/projects` and matches the slug, id or name. An empty project list
+yields `GridError::Authorization`; a non-empty list without a match yields
+`GridError::ProjectNotFound`. The account check and each verified project are
+cached per client. Discovery methods (`list_projects`, `list_tables`,
+`get_schema`, `get_me`, `get_usage`) deliberately do not verify, so there is no
+recursion. Verification is local: it does not use or send the project key.
+
 ## Quick start
 
 ```rust
 use gridapi_sdk::{Client, GridRecord, QueryOptions};
 
 fn main() -> Result<(), gridapi_sdk::GridError> {
-    // Reads GRIDAPI_API_KEY, GRIDAPI_BASE_URL, GRIDAPI_TIMEOUT_MS from the env.
+    // Reads GRIDAPI_API_KEY, GRIDAPI_PROJECT_KEY, GRIDAPI_BASE_URL and
+    // GRIDAPI_TIMEOUT_MS from the env. Data methods verify the project first.
     let client = Client::from_env()?;
+    client.verify(Some("acme"))?;
 
     let options = QueryOptions {
         filter: Some("status:active".into()),
@@ -301,9 +333,10 @@ variants each carry an `ErrorDetail` (`status: Option<u16>`,
 
 | Variant | Typical cause |
 | --- | --- |
-| `Authentication` | 401 — missing/invalid key. |
-| `Authorization` | 403 — key not allowed for the project/operation. |
-| `ProjectNotFound` | 404 — unknown project slug. |
+| `Configuration` | missing or malformed account/project key at build time; no key values in the message. |
+| `Authentication` | 401 — invalid key, or `/me` reports `authenticated: false`. |
+| `Authorization` | 403 — account sees no projects, or key not allowed for the operation. |
+| `ProjectNotFound` | 404 — unknown project slug, or local verification found no match. |
 | `TableNotFound` | 404 — unknown sheet/table. |
 | `RecordNotFound` | 404 — unknown record ID. |
 | `Validation` | 400–422 — bad filter, payload, or parameters. |
@@ -351,6 +384,8 @@ println!("{}", redact("Authorization: Bearer gp_live_secretvalue"));
 use gridapi_sdk::ClientBuilder;
 
 let client = ClientBuilder::new()
+    .api_key("gp_live_...")
+    .project_key("gapi_live_...")
     .max_retries(3)
     .retry_delay_ms(250)
     .retry_writes(true) // opt in to PATCH retries; POST is still never retried
@@ -366,7 +401,8 @@ endpoints; every method above maps to a path defined there.
 ## Examples
 
 A runnable example lives at `../../examples/rust/src/main.rs`. Configure it
-with `GRIDAPI_API_KEY` (required), then from that directory run `cargo run`.
+with `GRIDAPI_API_KEY` and `GRIDAPI_PROJECT_KEY` (both required), then from that
+directory run `cargo run`.
 
 ## Contributing
 

@@ -16,25 +16,39 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Matcher;
 
 /**
  * Official Java SDK for the GridAPI public REST API.
  *
- * One account-level key authenticates every authorized project; the project
- * slug is a routing target, never a credential. Server-side only: never ship
- * the key in a browser or mobile bundle.
+ * Two keys are required: an account key that authenticates every authorized
+ * project and a project key that is a local scope guard. The project slug is
+ * a routing target, never a credential. Server-side only: never ship either
+ * key in a browser or mobile bundle.
  *
- * Reads GRIDAPI_API_KEY (required), GRIDAPI_BASE_URL (default
- * https://api.gridapi.in) and GRIDAPI_TIMEOUT_MS (default 30000), each
- * overridable through {@link #builder()}.
+ * Reads GRIDAPI_API_KEY and GRIDAPI_PROJECT_KEY (both required),
+ * GRIDAPI_BASE_URL (default https://api.gridapi.in) and GRIDAPI_TIMEOUT_MS
+ * (default 30000), each overridable through {@link #builder()}.
+ *
+ * The project key is a local scope guard only: the public REST API has no
+ * project-key header, so the project key is never transmitted. Only the
+ * account key is sent as the Bearer token; project access is asserted via
+ * GET /api/v1/me/projects by {@link #verify(String)}.
  */
 public final class GridApiClient {
     private static final String DEFAULT_BASE_URL = "https://api.gridapi.in";
     private static final int DEFAULT_TIMEOUT_MS = 30_000;
+    private static final String ACCOUNT_PREFIX = "gp_live_";
+    private static final String PROJECT_PREFIX = "gapi_live_";
 
     private final String apiKey;
+    private final String projectKey;
+    private volatile boolean accountVerified;
+    private final Set<String> verifiedProjects = ConcurrentHashMap.newKeySet();
     private final String baseUrl;
     private final int timeoutMs;
     private final int maxRetries;
@@ -43,12 +57,11 @@ public final class GridApiClient {
     private final HttpClient http;
 
     private GridApiClient(Builder b) {
-        String key = b.apiKey != null ? b.apiKey : env("GRIDAPI_API_KEY");
-        if (key == null || key.isBlank()) {
-            throw new GridApiError.AuthenticationError(
-                "GridAPI: missing API key. Set GRIDAPI_API_KEY or pass apiKey to the builder.");
-        }
-        this.apiKey = key;
+        this.apiKey = requiredKey(b.apiKey != null ? b.apiKey : env("GRIDAPI_API_KEY"),
+            ACCOUNT_PREFIX, "GRIDAPI_API_KEY", "apiKey");
+        this.projectKey = requiredKey(
+            b.projectKey != null ? b.projectKey : env("GRIDAPI_PROJECT_KEY"),
+            PROJECT_PREFIX, "GRIDAPI_PROJECT_KEY", "projectKey");
 
         String url = b.baseUrl != null ? b.baseUrl : env("GRIDAPI_BASE_URL");
         this.baseUrl = (url == null || url.isBlank() ? DEFAULT_BASE_URL : url).replaceAll("/+$", "");
@@ -65,14 +78,23 @@ public final class GridApiClient {
 
     public GridApiClient(String apiKey) { this(builder().apiKey(apiKey)); }
 
+    public GridApiClient(String apiKey, String projectKey) {
+        this(builder().apiKey(apiKey).projectKey(projectKey));
+    }
+
     public GridApiClient(String apiKey, String baseUrl, int timeoutMs) {
         this(builder().apiKey(apiKey).baseUrl(baseUrl).timeoutMs(timeoutMs));
+    }
+
+    public GridApiClient(String apiKey, String projectKey, String baseUrl, int timeoutMs) {
+        this(builder().apiKey(apiKey).projectKey(projectKey).baseUrl(baseUrl).timeoutMs(timeoutMs));
     }
 
     public static Builder builder() { return new Builder(); }
 
     public static final class Builder {
         private String apiKey;
+        private String projectKey;
         private String baseUrl;
         private Integer timeoutMs;
         private Integer maxRetries;
@@ -80,6 +102,7 @@ public final class GridApiClient {
         private Boolean retryWrites;
 
         public Builder apiKey(String value) { this.apiKey = value; return this; }
+        public Builder projectKey(String value) { this.projectKey = value; return this; }
         public Builder baseUrl(String value) { this.baseUrl = value; return this; }
         public Builder timeoutMs(int value) { this.timeoutMs = value; return this; }
         public Builder maxRetries(int value) { this.maxRetries = value; return this; }
@@ -88,11 +111,49 @@ public final class GridApiClient {
         public GridApiClient build() { return new GridApiClient(this); }
     }
 
+    /**
+     * Confirms the account key is live and the project is one of the account's
+     * authorized projects. Runs once per account and once per project, and is
+     * called automatically by every data method. Discovery methods do not
+     * verify, so this never recurses.
+     */
+    public void verify() { verify(null); }
+
+    public void verify(String project) {
+        if (!accountVerified) {
+            AccountInfo me = getMe();
+            if (!me.authenticated()) {
+                throw new GridApiError.AuthenticationError(
+                    "GridAPI: account key is not authenticated.");
+            }
+            accountVerified = true;
+        }
+        if (project != null && !project.isEmpty() && !verifiedProjects.contains(project)) {
+            List<ProjectInfo> projects = listProjects();
+            boolean allowed = false;
+            for (ProjectInfo p : projects) {
+                if (Objects.equals(project, p.slug()) || Objects.equals(project, p.id())
+                    || Objects.equals(project, p.name())) { allowed = true; break; }
+            }
+            if (!allowed) {
+                if (projects.isEmpty()) {
+                    throw new GridApiError.AuthorizationError(
+                        "GridAPI: no projects are authorized for this account and project key.",
+                        GridApiError.Options.of(null, null, null));
+                }
+                throw new GridApiError.ProjectNotFoundError("Project not found: " + project,
+                    GridApiError.Options.of(null, null, null));
+            }
+            verifiedProjects.add(project);
+        }
+    }
+
     // ---- Records --------------------------------------------------------
 
     public ListResponse<GridRecord> get(String project, String table) { return get(project, table, null); }
 
     public ListResponse<GridRecord> get(String project, String table, QueryOptions options) {
+        verify(project);
         return ListResponse.from(request("GET", dataPath(project, table) + queryString(options), null));
     }
 
@@ -103,6 +164,7 @@ public final class GridApiClient {
     }
 
     public GridRecord getById(String project, String table, Object id) {
+        verify(project);
         return GridRecord.from(request("GET", dataPath(project, table, id), null));
     }
 
@@ -111,10 +173,12 @@ public final class GridApiClient {
     }
 
     public CreateResponse<GridRecord> post(String project, String table, Map<String, String> record) {
+        verify(project);
         return CreateResponse.from(request("POST", dataPath(project, table), record));
     }
 
     public CreateResponse<GridRecord> post(String project, String table, List<Map<String, String>> records) {
+        verify(project);
         return CreateResponse.from(request("POST", dataPath(project, table), records));
     }
 
@@ -124,6 +188,7 @@ public final class GridApiClient {
 
     public UpdateResponse<GridRecord> patch(String project, String table, Object id,
                                             Map<String, String> changes) {
+        verify(project);
         return UpdateResponse.from(request("PATCH", dataPath(project, table, id), changes));
     }
 
@@ -133,10 +198,12 @@ public final class GridApiClient {
 
     public UpdateResponse<GridRecord> put(String project, String table, Object id,
                                           Map<String, String> changes) {
+        verify(project);
         return UpdateResponse.from(request("PUT", dataPath(project, table, id), changes));
     }
 
     public DeleteResponse delete(String project, String table, Object id) {
+        verify(project);
         return DeleteResponse.from(request("DELETE", dataPath(project, table, id), null));
     }
 
@@ -341,6 +408,17 @@ public final class GridApiClient {
         } catch (NumberFormatException e) {
             return fallback;
         }
+    }
+
+    private static String requiredKey(String value, String prefix, String envName, String optionName) {
+        if (value == null || value.isBlank()) {
+            throw new ConfigurationException(
+                "GridAPI: missing " + envName + ". Set it or pass " + optionName + ".");
+        }
+        if (!value.startsWith(prefix) || value.length() == prefix.length()) {
+            throw new ConfigurationException("GridAPI: " + envName + " must be a " + prefix + "... key.");
+        }
+        return value;
     }
 
     private static String env(String name) {

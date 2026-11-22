@@ -5,6 +5,7 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
@@ -12,6 +13,10 @@ use gridapi_sdk::{redact, Client, ClientBuilder, GridError, QueryOptions};
 
 const KEY: &str = "gp_live_testkey";
 const OTHER_KEY: &str = "gp_live_otheraccount";
+const PROJECT_KEY: &str = "gapi_live_testproject";
+
+// Process-wide env vars are read by from_env/build; keep env tests serial.
+static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn repo_root() -> PathBuf {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -52,6 +57,7 @@ impl MockServer {
     fn client(&self) -> Client {
         ClientBuilder::new()
             .api_key(KEY)
+            .project_key(PROJECT_KEY)
             .base_url(&self.base)
             .build()
             .unwrap()
@@ -60,6 +66,7 @@ impl MockServer {
     fn at(&self, suffix: &str) -> Client {
         ClientBuilder::new()
             .api_key(KEY)
+            .project_key(PROJECT_KEY)
             .base_url(format!("{}{}", self.base, suffix))
             .retry_delay_ms(1)
             .build()
@@ -161,7 +168,8 @@ fn error_mapping() {
     let server = MockServer::start(18796);
 
     let bad_key = ClientBuilder::new()
-        .api_key("not-a-real-key")
+        .api_key("gp_live_invalidkey")
+        .project_key(PROJECT_KEY)
         .base_url(&server.base)
         .build()
         .unwrap();
@@ -170,14 +178,16 @@ fn error_mapping() {
         Err(GridError::Authentication(e)) if e.status == Some(401)
     ));
 
+    // OTHER_KEY authenticates but sees no projects: a local scope denial.
     let other = ClientBuilder::new()
         .api_key(OTHER_KEY)
+        .project_key(PROJECT_KEY)
         .base_url(&server.base)
         .build()
         .unwrap();
     assert!(matches!(
         other.get("acme", "users", &QueryOptions::default()),
-        Err(GridError::Authorization(e)) if e.status == Some(403)
+        Err(GridError::Authorization(_))
     ));
 
     let client = server.client();
@@ -210,6 +220,7 @@ fn error_mapping() {
 
     let rate = ClientBuilder::new()
         .api_key(KEY)
+        .project_key(PROJECT_KEY)
         .base_url(format!("{}/fault/rate", server.base))
         .max_retries(0)
         .build()
@@ -237,6 +248,9 @@ fn redaction() {
     assert!(rendered.contains("[REDACTED]"));
     assert!(!rendered.contains(KEY));
     assert!(!err.message().contains(KEY));
+    // The project key is local only; it must never appear in an error.
+    assert!(!rendered.contains(PROJECT_KEY));
+    assert!(!err.message().contains(PROJECT_KEY));
 }
 
 #[test]
@@ -250,6 +264,7 @@ fn retries_honour_method_and_retry_after() {
 
     let always = ClientBuilder::new()
         .api_key(KEY)
+        .project_key(PROJECT_KEY)
         .base_url(format!("{}/fault/always-rate", server.base))
         .max_retries(1)
         .retry_delay_ms(1)
@@ -304,8 +319,12 @@ fn discovery() {
 
 #[test]
 fn env_configuration() {
+    let _guard = ENV_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let server = MockServer::start(18801);
     std::env::set_var("GRIDAPI_API_KEY", KEY);
+    std::env::set_var("GRIDAPI_PROJECT_KEY", PROJECT_KEY);
     std::env::set_var("GRIDAPI_BASE_URL", &server.base);
     std::env::set_var("GRIDAPI_TIMEOUT_MS", "1500");
 
@@ -320,7 +339,11 @@ fn env_configuration() {
     );
 
     // Explicit builder overrides win over the environment.
-    let overridden = ClientBuilder::new().api_key(OTHER_KEY).build().unwrap();
+    let overridden = ClientBuilder::new()
+        .api_key(OTHER_KEY)
+        .project_key(PROJECT_KEY)
+        .build()
+        .unwrap();
     assert!(matches!(
         overridden.get("acme", "users", &QueryOptions::default()),
         Err(GridError::Authorization(_))
@@ -349,6 +372,7 @@ fn upstream_maps_from_http_5xx() {
 
     let client = ClientBuilder::new()
         .api_key(KEY)
+        .project_key(PROJECT_KEY)
         .base_url(format!("http://127.0.0.1:{port}"))
         .max_retries(1)
         .retry_delay_ms(1)
@@ -360,4 +384,123 @@ fn upstream_maps_from_http_5xx() {
     assert!(matches!(err, GridError::Upstream(_)));
     assert!(err.retryable());
     assert_eq!(err.status(), Some(503));
+}
+
+#[test]
+fn missing_api_key_is_configuration_error() {
+    let _guard = ENV_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    std::env::set_var("GRIDAPI_API_KEY", "");
+    std::env::set_var("GRIDAPI_PROJECT_KEY", "");
+    let err = ClientBuilder::new()
+        .project_key(PROJECT_KEY)
+        .build()
+        .err()
+        .expect("expected configuration error");
+    assert!(matches!(err, GridError::Configuration(_)));
+    assert!(err.message().contains("GRIDAPI_API_KEY"));
+}
+
+#[test]
+fn missing_project_key_is_configuration_error() {
+    let _guard = ENV_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    std::env::set_var("GRIDAPI_API_KEY", "");
+    std::env::set_var("GRIDAPI_PROJECT_KEY", "");
+    let err = ClientBuilder::new()
+        .api_key(KEY)
+        .build()
+        .err()
+        .expect("expected configuration error");
+    assert!(matches!(err, GridError::Configuration(_)));
+    assert!(err.message().contains("GRIDAPI_PROJECT_KEY"));
+}
+
+#[test]
+fn malformed_key_prefixes_are_configuration_errors() {
+    for (account, project) in [
+        ("not-a-real-key", PROJECT_KEY),
+        ("gp_live_", PROJECT_KEY),
+        (KEY, "not-a-real-key"),
+        (KEY, "gapi_live_"),
+        (KEY, "gp_live_wrongprefix"),
+    ] {
+        let err = ClientBuilder::new()
+            .api_key(account)
+            .project_key(project)
+            .build()
+            .err()
+            .expect("expected configuration error");
+        assert!(matches!(err, GridError::Configuration(_)));
+    }
+}
+
+#[test]
+fn configuration_errors_never_echo_key_values() {
+    let bad_account = "wrong_supersecretaccountvalue";
+    let err = ClientBuilder::new()
+        .api_key(bad_account)
+        .project_key(PROJECT_KEY)
+        .build()
+        .err()
+        .expect("expected configuration error");
+    assert!(!err.message().contains(bad_account));
+    assert!(!format!("{err}").contains(bad_account));
+
+    let bad_project = "bad_supersecretprojectvalue";
+    let err = ClientBuilder::new()
+        .api_key(KEY)
+        .project_key(bad_project)
+        .build()
+        .err()
+        .expect("expected configuration error");
+    assert!(!err.message().contains(bad_project));
+    assert!(!format!("{err}").contains(bad_project));
+}
+
+#[test]
+fn verify_succeeds_and_caches_account_and_project() {
+    let server = MockServer::start(18802);
+    let client = server.client();
+    client.verify(None).unwrap();
+    client.verify(Some("acme")).unwrap();
+    client.verify(Some("p1")).unwrap();
+    client.verify(Some("Acme")).unwrap();
+    client.verify(None).unwrap();
+    client
+        .get("acme", "users", &QueryOptions::default())
+        .unwrap();
+}
+
+#[test]
+fn verify_unknown_project_is_project_not_found() {
+    let server = MockServer::start(18803);
+    let client = server.client();
+    let err = client.verify(Some("missing")).unwrap_err();
+    assert!(matches!(err, GridError::ProjectNotFound(_)));
+    assert!(err.status().is_none());
+    assert!(matches!(
+        client.get("missing", "users", &QueryOptions::default()),
+        Err(GridError::ProjectNotFound(_))
+    ));
+}
+
+#[test]
+fn verify_forbidden_account_is_authorization_error() {
+    let server = MockServer::start(18804);
+    let client = ClientBuilder::new()
+        .api_key(OTHER_KEY)
+        .project_key(PROJECT_KEY)
+        .base_url(&server.base)
+        .build()
+        .unwrap();
+    let err = client.verify(Some("acme")).unwrap_err();
+    assert!(matches!(err, GridError::Authorization(_)));
+    assert!(err.status().is_none());
+    assert!(matches!(
+        client.get("acme", "users", &QueryOptions::default()),
+        Err(GridError::Authorization(_))
+    ));
 }

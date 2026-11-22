@@ -8,8 +8,13 @@ import java.util.Map;
 
 /**
  * Runnable GridAPI Java example. Configuration comes from the environment only:
- *   GRIDAPI_API_KEY=... GRIDAPI_BASE_URL=... java -cp <sdk-classes> Quickstart
- * Never hard-code an API key.
+ *   GRIDAPI_API_KEY=... GRIDAPI_PROJECT_KEY=... GRIDAPI_BASE_URL=... \
+ *     java -cp <sdk-classes> Quickstart
+ * Both keys are required. Only the account key (GRIDAPI_API_KEY) is sent as the
+ * Bearer token; GRIDAPI_PROJECT_KEY is a local scope guard and is never
+ * transmitted. Every data method verifies the account via GET /api/v1/me and
+ * the requested project via GET /api/v1/me/projects before its request.
+ * Never hard-code either key.
  */
 public final class Quickstart {
     public static void main(String[] args) {

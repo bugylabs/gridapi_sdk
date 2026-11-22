@@ -3,13 +3,18 @@
 
 Reads credentials from the environment only — no keys in source::
 
-    export GRIDAPI_API_KEY="..."           # account-level key
+    export GRIDAPI_API_KEY="..."           # account key (gp_live_...)
+    export GRIDAPI_PROJECT_KEY="..."       # project key (gapi_live_...)
     export GRIDAPI_BASE_URL="https://api.gridapi.in"   # optional
     python3 examples/python/quickstart.py
+
+Only the account key is sent to the API; the project key is a local scope guard
+that is never transmitted. Both keys are required and are checked at startup.
 
 Against the local contract mock server instead:
 
     GRIDAPI_API_KEY=<your-local-test-key> \\
+    GRIDAPI_PROJECT_KEY=<your-local-project-key> \\
     GRIDAPI_BASE_URL=http://127.0.0.1:8787 \\
     python3 examples/python/quickstart.py
 """
@@ -25,7 +30,7 @@ from gridapi import GridApiClient, GridApiError  # noqa: E402
 
 
 def main():
-    client = GridApiClient()  # GRIDAPI_API_KEY / BASE_URL / TIMEOUT_MS
+    client = GridApiClient()  # GRIDAPI_API_KEY / GRIDAPI_PROJECT_KEY / BASE_URL / TIMEOUT_MS
 
     me = client.get_me()
     print("authenticated as account:", me.get("account", {}).get("id"))
@@ -34,6 +39,8 @@ def main():
     print("projects:", [p["slug"] for p in projects])
 
     project = "acme"
+    # Optional explicit check; data methods call verify() for you.
+    client.verify(project)
     tables = [t["endpoint"] for t in client.list_tables(project)]
     print("tables for", project, ":", tables)
 

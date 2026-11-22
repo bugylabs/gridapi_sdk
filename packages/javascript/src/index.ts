@@ -51,8 +51,10 @@ export interface QueryOptions {
 }
 
 export interface GridApiOptions {
-  /** Defaults to process.env.GRIDAPI_API_KEY. */
+  /** Account key (gp_live_...). Defaults to process.env.GRIDAPI_API_KEY. */
   apiKey?: string;
+  /** Project key (gapi_live_...). Defaults to process.env.GRIDAPI_PROJECT_KEY. */
+  projectKey?: string;
   /** Defaults to process.env.GRIDAPI_BASE_URL or https://api.gridapi.in. */
   baseUrl?: string;
   /** Defaults to process.env.GRIDAPI_TIMEOUT_MS or 30000. */
@@ -128,6 +130,13 @@ export class GridApiError extends Error {
     this.code = options.code;
     this.body = options.body ? redact(options.body) : undefined;
     this.retryable = options.retryable ?? false;
+  }
+}
+
+export class ConfigurationError extends GridApiError {
+  constructor(message: string, options: ConstructorParameters<typeof GridApiError>[1] = {}) {
+    super(message, options);
+    this.name = "ConfigurationError";
   }
 }
 
@@ -250,8 +259,27 @@ function retryDelayMs(retryAfter: string | null, base: number, attempt: number):
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+const ACCOUNT_PREFIX = "gp_live_";
+const PROJECT_PREFIX = "gapi_live_";
+
+function requiredKey(
+  value: string | undefined,
+  prefix: string,
+  envName: string,
+  optionName: string,
+): string {
+  if (!value) throw new ConfigurationError(`GridAPI: missing ${envName}. Set it or pass ${optionName}.`);
+  if (!value.startsWith(prefix) || value.length === prefix.length) {
+    throw new ConfigurationError(`GridAPI: ${envName} must be a ${prefix}... key.`);
+  }
+  return value;
+}
+
 export class GridApiClient {
   private readonly apiKey: string;
+  private readonly projectKey: string;
+  private accountVerification?: Promise<void>;
+  private readonly verifiedProjects = new Set<string>();
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly maxRetries: number;
@@ -259,19 +287,51 @@ export class GridApiClient {
   private readonly retryWrites: boolean;
 
   constructor(options: GridApiOptions = {}) {
-    const key = options.apiKey ?? env.GRIDAPI_API_KEY;
-    if (!key) {
-      throw new AuthenticationError(
-        "GridAPI: missing API key. Set GRIDAPI_API_KEY or pass apiKey in options.",
-      );
-    }
-    this.apiKey = key;
+    this.apiKey = requiredKey(
+      options.apiKey ?? env.GRIDAPI_API_KEY, ACCOUNT_PREFIX, "GRIDAPI_API_KEY", "apiKey",
+    );
+    // Required locally as a scope guard; the public REST API has no project-key
+    // header, so only the account key is sent and scope is asserted via /me/projects.
+    this.projectKey = requiredKey(
+      options.projectKey ?? env.GRIDAPI_PROJECT_KEY,
+      PROJECT_PREFIX, "GRIDAPI_PROJECT_KEY", "projectKey",
+    );
     this.baseUrl = (options.baseUrl ?? env.GRIDAPI_BASE_URL ?? "https://api.gridapi.in")
       .replace(/\/+$/, "");
     this.timeoutMs = options.timeoutMs ?? (Number(env.GRIDAPI_TIMEOUT_MS) || 30_000);
     this.maxRetries = options.maxRetries ?? 2;
     this.retryDelayMs = options.retryDelayMs ?? 500;
     this.retryWrites = options.retryWrites ?? false;
+  }
+
+  /**
+   * Confirm the account key is live and the project is in this account's
+   * authorized projects. Runs once per account and once per project, and is
+   * called automatically by every data method.
+   */
+  async verify(project?: string): Promise<void> {
+    this.accountVerification ??= (async () => {
+      const me = await this.getMe();
+      if (!me.authenticated) {
+        throw new AuthenticationError("GridAPI: account key is not authenticated.");
+      }
+    })();
+    await this.accountVerification;
+    if (project && !this.verifiedProjects.has(project)) {
+      const projects = await this.listProjects();
+      const allowed = projects.some(
+        (p) => p.slug === project || p.id === project || p.name === project,
+      );
+      if (!allowed) {
+        if (projects.length === 0) {
+          throw new AuthorizationError(
+            "GridAPI: no projects are authorized for this account and project key.",
+          );
+        }
+        throw new ProjectNotFoundError(`Project not found: ${project}`);
+      }
+      this.verifiedProjects.add(project);
+    }
   }
 
   private dataPath(project: string, table: string, id?: string): string {
@@ -344,27 +404,33 @@ export class GridApiClient {
     }
   }
 
-  get<T extends GridRecord = GridRecord>(project: string, table: string, params?: QueryOptions): Promise<ListResponse<T>> {
+  async get<T extends GridRecord = GridRecord>(project: string, table: string, params?: QueryOptions): Promise<ListResponse<T>> {
+    await this.verify(project);
     return this.request("GET", this.dataPath(project, table) + this.queryString(params)) as Promise<ListResponse<T>>;
   }
 
-  getById<T extends GridRecord = GridRecord>(project: string, table: string, id: string | number): Promise<T> {
+  async getById<T extends GridRecord = GridRecord>(project: string, table: string, id: string | number): Promise<T> {
+    await this.verify(project);
     return this.request("GET", this.dataPath(project, table, String(id))) as Promise<T>;
   }
 
-  post<T extends GridRecord = GridRecord>(project: string, table: string, record: GridRecord | GridRecord[]): Promise<CreateResponse<T>> {
+  async post<T extends GridRecord = GridRecord>(project: string, table: string, record: GridRecord | GridRecord[]): Promise<CreateResponse<T>> {
+    await this.verify(project);
     return this.request("POST", this.dataPath(project, table), record) as Promise<CreateResponse<T>>;
   }
 
-  patch<T extends GridRecord = GridRecord>(project: string, table: string, id: string | number, changes: GridRecord): Promise<UpdateResponse<T>> {
+  async patch<T extends GridRecord = GridRecord>(project: string, table: string, id: string | number, changes: GridRecord): Promise<UpdateResponse<T>> {
+    await this.verify(project);
     return this.request("PATCH", this.dataPath(project, table, String(id)), changes) as Promise<UpdateResponse<T>>;
   }
 
-  put<T extends GridRecord = GridRecord>(project: string, table: string, id: string | number, record: GridRecord): Promise<UpdateResponse<T>> {
+  async put<T extends GridRecord = GridRecord>(project: string, table: string, id: string | number, record: GridRecord): Promise<UpdateResponse<T>> {
+    await this.verify(project);
     return this.request("PUT", this.dataPath(project, table, String(id)), record) as Promise<UpdateResponse<T>>;
   }
 
-  delete(project: string, table: string, id: string | number): Promise<DeleteResponse> {
+  async delete(project: string, table: string, id: string | number): Promise<DeleteResponse> {
+    await this.verify(project);
     return this.request("DELETE", this.dataPath(project, table, String(id))) as Promise<DeleteResponse>;
   }
 

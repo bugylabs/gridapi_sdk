@@ -1,12 +1,15 @@
 //! Official Rust SDK for the GridAPI public REST API.
 //!
-//! One account-level API key authenticates every authorized project. A project
-//! slug is a routing/authorization target, never a credential.
+//! Two keys are required at build time: an account key (`gp_live_...`) and a
+//! project key (`gapi_live_...`). Only the account key is sent as
+//! `Authorization: Bearer`; the project key is a local scope guard that is
+//! never transmitted, logged or echoed. A project slug is a routing target,
+//! not a credential.
 //!
 //! # Server-side only
 //!
-//! The API key is a secret. Never embed it in a browser bundle, mobile app, or
-//! any other client that ships to end users. Keep it in an environment variable
+//! The keys are secrets. Never embed them in a browser bundle, mobile app, or
+//! any other client that ships to end users. Keep them in environment variables
 //! on your server.
 //!
 //! # Quick start
@@ -15,8 +18,10 @@
 //! use gridapi_sdk::{Client, QueryOptions};
 //!
 //! # fn main() -> Result<(), gridapi_sdk::GridError> {
-//! // Reads GRIDAPI_API_KEY, GRIDAPI_BASE_URL, GRIDAPI_TIMEOUT_MS from the env.
+//! // Reads GRIDAPI_API_KEY, GRIDAPI_PROJECT_KEY, GRIDAPI_BASE_URL and
+//! // GRIDAPI_TIMEOUT_MS from the env. Data methods verify the project first.
 //! let client = Client::from_env()?;
+//! client.verify(Some("acme"))?;
 //! let options = QueryOptions {
 //!     filter: Some("status:active".into()),
 //!     limit: Some(10),
@@ -28,9 +33,10 @@
 //! # }
 //! ```
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fmt;
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -181,6 +187,7 @@ pub struct ErrorDetail {
 /// Errors mirroring the TypeScript SDK's taxonomy.
 #[derive(Debug, Clone)]
 pub enum GridError {
+    Configuration(ErrorDetail),
     Authentication(ErrorDetail),
     Authorization(ErrorDetail),
     ProjectNotFound(ErrorDetail),
@@ -220,7 +227,8 @@ impl GridError {
 
     fn detail(&self) -> &ErrorDetail {
         match self {
-            Self::Authentication(d)
+            Self::Configuration(d)
+            | Self::Authentication(d)
             | Self::Authorization(d)
             | Self::ProjectNotFound(d)
             | Self::TableNotFound(d)
@@ -321,6 +329,32 @@ fn with_no_status(message: &str) -> ErrorDetail {
         status: None,
         code: None,
         message: redact(message),
+    }
+}
+
+/// Configuration errors use fixed text only, so a key value can never leak.
+fn config_error(message: &str) -> GridError {
+    GridError::Configuration(ErrorDetail {
+        status: None,
+        code: None,
+        message: message.to_string(),
+    })
+}
+
+fn required_key(
+    value: Option<String>,
+    env_name: &str,
+    builder_method: &str,
+    prefix: &str,
+) -> Result<String, GridError> {
+    match value.filter(|key| !key.is_empty()) {
+        None => Err(config_error(&format!(
+            "GridAPI: missing {env_name}. Set it or use ClientBuilder::{builder_method}()."
+        ))),
+        Some(key) if !key.starts_with(prefix) || key.len() == prefix.len() => Err(config_error(
+            &format!("GridAPI: {env_name} must be a {prefix}... key."),
+        )),
+        Some(key) => Ok(key),
     }
 }
 
@@ -546,6 +580,7 @@ fn data_path_with_id(project: &str, table: &str, id: &str) -> String {
 #[derive(Debug, Clone)]
 pub struct ClientBuilder {
     api_key: Option<String>,
+    project_key: Option<String>,
     base_url: Option<String>,
     timeout_ms: Option<u64>,
     max_retries: usize,
@@ -563,6 +598,7 @@ impl ClientBuilder {
     pub fn new() -> Self {
         Self {
             api_key: None,
+            project_key: None,
             base_url: None,
             timeout_ms: None,
             max_retries: 2,
@@ -571,9 +607,17 @@ impl ClientBuilder {
         }
     }
 
-    /// Account-level API key. Defaults to `GRIDAPI_API_KEY` (required).
+    /// Account-level API key (`gp_live_...`). Defaults to `GRIDAPI_API_KEY`.
+    /// Required; only this key is sent as `Authorization: Bearer`.
     pub fn api_key(mut self, key: impl Into<String>) -> Self {
         self.api_key = Some(key.into());
+        self
+    }
+
+    /// Project key (`gapi_live_...`). Defaults to `GRIDAPI_PROJECT_KEY`.
+    /// Required as a local scope guard; never transmitted or logged.
+    pub fn project_key(mut self, key: impl Into<String>) -> Self {
+        self.project_key = Some(key.into());
         self
     }
 
@@ -608,15 +652,21 @@ impl ClientBuilder {
     }
 
     pub fn build(self) -> Result<Client, GridError> {
-        let api_key = self
-            .api_key
-            .or_else(|| env::var("GRIDAPI_API_KEY").ok())
-            .filter(|key| !key.is_empty())
-            .ok_or_else(|| {
-                GridError::Authentication(with_no_status(
-                    "GridAPI: missing API key. Set GRIDAPI_API_KEY or use ClientBuilder::api_key().",
-                ))
-            })?;
+        let api_key = required_key(
+            self.api_key.or_else(|| env::var("GRIDAPI_API_KEY").ok()),
+            "GRIDAPI_API_KEY",
+            "api_key",
+            "gp_live_",
+        )?;
+        // Required at build time, then discarded: it is a local scope guard and
+        // must never be stored, transmitted or logged.
+        let _project_key = required_key(
+            self.project_key
+                .or_else(|| env::var("GRIDAPI_PROJECT_KEY").ok()),
+            "GRIDAPI_PROJECT_KEY",
+            "project_key",
+            "gapi_live_",
+        )?;
 
         let base_url = self
             .base_url
@@ -645,6 +695,8 @@ impl ClientBuilder {
             max_retries: self.max_retries,
             retry_delay_ms: self.retry_delay_ms,
             retry_writes: self.retry_writes,
+            account_verified: OnceLock::new(),
+            verified_projects: Mutex::new(HashSet::new()),
         })
     }
 }
@@ -658,13 +710,64 @@ pub struct Client {
     max_retries: usize,
     retry_delay_ms: u64,
     retry_writes: bool,
+    account_verified: OnceLock<Result<(), GridError>>,
+    verified_projects: Mutex<HashSet<String>>,
 }
 
 impl Client {
-    /// Build a client from `GRIDAPI_API_KEY`, `GRIDAPI_BASE_URL` and
-    /// `GRIDAPI_TIMEOUT_MS`.
+    /// Build a client from `GRIDAPI_API_KEY`, `GRIDAPI_PROJECT_KEY`,
+    /// `GRIDAPI_BASE_URL` and `GRIDAPI_TIMEOUT_MS`.
     pub fn from_env() -> Result<Self, GridError> {
         ClientBuilder::new().build()
+    }
+
+    /// Check the account once, then (when `project` is given) check that the
+    /// account can see that project by slug, id or name.
+    ///
+    /// Results are cached per client. Discovery calls (`get_me`,
+    /// `list_projects`, `list_tables`, `get_schema`, `get_usage`) deliberately
+    /// do not verify, so this never recurses. The project key is never used
+    /// here: it is validated at build time as a local scope guard only.
+    pub fn verify(&self, project: Option<&str>) -> Result<(), GridError> {
+        self.account_verified
+            .get_or_init(|| match self.get_me() {
+                Ok(me) if me.authenticated => Ok(()),
+                Ok(_) => Err(GridError::Authentication(with_no_status(
+                    "GridAPI: account is not authenticated.",
+                ))),
+                Err(err) => Err(err),
+            })
+            .clone()?;
+
+        let Some(project) = project else {
+            return Ok(());
+        };
+        if self
+            .verified_projects
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .contains(project)
+        {
+            return Ok(());
+        }
+        let projects = self.list_projects()?;
+        let allowed = projects.iter().any(|candidate| {
+            candidate.slug == project || candidate.id == project || candidate.name == project
+        });
+        if !allowed {
+            return Err(if projects.is_empty() {
+                GridError::Authorization(with_no_status(
+                    "GridAPI: account is not authorized for this project.",
+                ))
+            } else {
+                GridError::ProjectNotFound(with_no_status("GridAPI: project not found."))
+            });
+        }
+        self.verified_projects
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(project.to_string());
+        Ok(())
     }
 
     fn send_once(
@@ -770,6 +873,7 @@ impl Client {
         table: &str,
         options: &QueryOptions,
     ) -> Result<ListResponse, GridError> {
+        self.verify(Some(project))?;
         let body = self.request(
             Method::Get,
             data_path(project, table),
@@ -806,6 +910,7 @@ impl Client {
 
     /// Retrieve one record by its primary key.
     pub fn get_by_id(&self, project: &str, table: &str, id: &str) -> Result<GridRecord, GridError> {
+        self.verify(Some(project))?;
         let body = self.request(
             Method::Get,
             data_path_with_id(project, table, id),
@@ -822,6 +927,7 @@ impl Client {
         table: &str,
         records: &[GridRecord],
     ) -> Result<CreateResponse, GridError> {
+        self.verify(Some(project))?;
         let payload = serde_json::to_string(records).map_err(|err| decode_error(&err))?;
         let body = self.request(
             Method::Post,
@@ -840,6 +946,7 @@ impl Client {
         id: &str,
         data: &GridRecord,
     ) -> Result<UpdateResponse, GridError> {
+        self.verify(Some(project))?;
         let payload = serde_json::to_string(data).map_err(|err| decode_error(&err))?;
         let body = self.request(
             Method::Patch,
@@ -858,6 +965,7 @@ impl Client {
         id: &str,
         data: &GridRecord,
     ) -> Result<UpdateResponse, GridError> {
+        self.verify(Some(project))?;
         let payload = serde_json::to_string(data).map_err(|err| decode_error(&err))?;
         let body = self.request(
             Method::Put,
@@ -875,6 +983,7 @@ impl Client {
         table: &str,
         id: &str,
     ) -> Result<DeleteResponse, GridError> {
+        self.verify(Some(project))?;
         let body = self.request(
             Method::Delete,
             data_path_with_id(project, table, id),

@@ -116,6 +116,17 @@ def main():
         if private_refs.search(path.read_text(errors="ignore")):
             errors.append(f"{rel}: private/legacy repository reference")
 
+    # 6. Dual-key auth: both env vars must appear in every SDK and its README.
+    if manifest["api"].get("projectKeyEnv") != "GRIDAPI_PROJECT_KEY":
+        errors.append("manifest: projectKeyEnv must be GRIDAPI_PROJECT_KEY")
+    for lang in manifest["languages"]:
+        source = ROOT / lang["sourceFile"]
+        if source.exists() and "GRIDAPI_PROJECT_KEY" not in source.read_text():
+            errors.append(f"{lang['id']}: SDK source has no GRIDAPI_PROJECT_KEY support")
+        readme = ROOT / "packages" / lang["id"] / "README.md"
+        if readme.exists() and "GRIDAPI_PROJECT_KEY" not in readme.read_text():
+            errors.append(f"{lang['id']}: README does not document GRIDAPI_PROJECT_KEY")
+
     if errors:
         for e in errors:
             print(f"  - {e}")

@@ -1,4 +1,5 @@
 import io.gridapi.AccountInfo;
+import io.gridapi.ConfigurationException;
 import io.gridapi.CreateResponse;
 import io.gridapi.DeleteResponse;
 import io.gridapi.GridApiClient;
@@ -26,6 +27,7 @@ import java.util.concurrent.TimeUnit;
 public final class ContractTest {
     private static final String PORT = "8792";
     private static final String TEST_KEY = "gp_live_testkey";
+    private static final String PROJECT_KEY = "gapi_live_testproject";
     private static final String OTHER_KEY = "gp_live_otheraccount";
     private static String base;
     private static int checks;
@@ -39,10 +41,11 @@ public final class ContractTest {
             .start();
         try {
             waitForServer();
-            GridApiClient client = new GridApiClient(TEST_KEY, base, 5_000);
+            GridApiClient client = new GridApiClient(TEST_KEY, PROJECT_KEY, base, 5_000);
 
             readContract(client);
             discovery(client);
+            verification();
             errorMapping(client);
             redactionAndFaults();
             retries();
@@ -109,16 +112,73 @@ public final class ContractTest {
         check(Long.valueOf(10).equals(usage.totalApiCallsUsed()), "getUsage");
     }
 
+    // ---- Two-key configuration and verification -------------------------
+
+    private static void verification() {
+        // Both keys are required and validated at construction.
+        expectError(ConfigurationException.class, () -> new GridApiClient(null, PROJECT_KEY),
+            "missing account key -> ConfigurationException");
+        expectError(ConfigurationException.class, () -> new GridApiClient(TEST_KEY, null),
+            "missing project key -> ConfigurationException");
+        expectError(ConfigurationException.class, () -> new GridApiClient("gp_live", PROJECT_KEY),
+            "malformed account key prefix -> ConfigurationException");
+        expectError(ConfigurationException.class, () -> new GridApiClient(TEST_KEY, "gapi_live"),
+            "malformed project key prefix -> ConfigurationException");
+        expectError(ConfigurationException.class, () -> new GridApiClient("gp_live_", PROJECT_KEY),
+            "empty account key suffix -> ConfigurationException");
+        expectError(ConfigurationException.class, () -> new GridApiClient(TEST_KEY, "gapi_live_"),
+            "empty project key suffix -> ConfigurationException");
+
+        // Key values never appear in configuration errors.
+        try {
+            new GridApiClient("badprefix_secretaccount123", PROJECT_KEY);
+            throw new AssertionError("FAIL: malformed account key should fail");
+        } catch (ConfigurationException e) {
+            checks++;
+            check(!e.getMessage().contains("secretaccount123"), "account key value absent from error");
+        }
+        try {
+            new GridApiClient(TEST_KEY, "badprefix_secretproject456");
+            throw new AssertionError("FAIL: malformed project key should fail");
+        } catch (ConfigurationException e) {
+            checks++;
+            check(!e.getMessage().contains("secretproject456"), "project key value absent from error");
+        }
+
+        GridApiClient v = new GridApiClient(TEST_KEY, PROJECT_KEY, base, 5_000);
+        v.verify();
+        v.verify("acme");
+        v.verify("acme"); // cached: no second project lookup
+        v.verify("beta");
+        checks++;
+        check(v.get("acme", "users").data().size() == 3, "verified client reads data");
+
+        GridApiClient ghost = new GridApiClient(TEST_KEY, PROJECT_KEY, base, 5_000);
+        expectError(GridApiError.ProjectNotFoundError.class, () -> ghost.verify("ghost"),
+            "unknown project -> ProjectNotFoundError");
+        expectError(GridApiError.ProjectNotFoundError.class, () -> ghost.get("ghost", "users"),
+            "data method verifies project before request");
+
+        GridApiClient unauth = new GridApiClient("gp_live_wrongkey123", PROJECT_KEY, base, 5_000);
+        expectError(GridApiError.AuthenticationError.class, unauth::verify,
+            "unauthenticated account -> AuthenticationError");
+
+        GridApiClient forbidden = new GridApiClient(OTHER_KEY, PROJECT_KEY, base, 5_000);
+        check(forbidden.listProjects().isEmpty(), "discovery does not trigger verification");
+        expectError(GridApiError.AuthorizationError.class, () -> forbidden.verify("acme"),
+            "account with no authorized projects -> AuthorizationError");
+    }
+
     // ---- Error mapping --------------------------------------------------
 
     private static void errorMapping(GridApiClient client) {
-        expectError(GridApiError.AuthenticationError.class, () -> new GridApiClient(""),
+        expectError(ConfigurationException.class, () -> new GridApiClient(""),
             "missing key rejected at construction");
 
-        GridApiClient bad = new GridApiClient("gp_live_wrongkey123", base, 5_000);
+        GridApiClient bad = new GridApiClient("gp_live_wrongkey123", PROJECT_KEY, base, 5_000);
         expectError(GridApiError.AuthenticationError.class, () -> bad.get("acme", "users"),
             "invalid key -> AuthenticationError");
-        GridApiClient forbidden = new GridApiClient(OTHER_KEY, base, 5_000);
+        GridApiClient forbidden = new GridApiClient(OTHER_KEY, PROJECT_KEY, base, 5_000);
         expectError(GridApiError.AuthorizationError.class, () -> forbidden.get("acme", "users"),
             "other account -> AuthorizationError");
 
@@ -136,7 +196,7 @@ public final class ContractTest {
     // ---- Redaction and fault injection ----------------------------------
 
     private static void redactionAndFaults() {
-        GridApiClient echo = new GridApiClient(TEST_KEY, base + "/fault/echo", 5_000);
+        GridApiClient echo = new GridApiClient(TEST_KEY, PROJECT_KEY, base + "/fault/echo", 5_000);
         try {
             echo.get("acme", "users");
             throw new AssertionError("FAIL: echo fault should fail");
@@ -147,7 +207,7 @@ public final class ContractTest {
             check(e.getBody() != null && !e.getBody().contains(TEST_KEY), "raw key absent from body");
         }
 
-        GridApiClient quota = new GridApiClient(TEST_KEY, base + "/fault/quota", 5_000);
+        GridApiClient quota = new GridApiClient(TEST_KEY, PROJECT_KEY, base + "/fault/quota", 5_000);
         try {
             quota.get("acme", "users");
             throw new AssertionError("FAIL: quota fault should fail");
@@ -157,12 +217,12 @@ public final class ContractTest {
             check(!e.isRetryable(), "quota is terminal");
         }
 
-        GridApiClient alwaysRate = GridApiClient.builder().apiKey(TEST_KEY)
+        GridApiClient alwaysRate = GridApiClient.builder().apiKey(TEST_KEY).projectKey(PROJECT_KEY)
             .baseUrl(base + "/fault/always-rate").maxRetries(1).retryDelayMs(1).build();
         expectError(GridApiError.RateLimitError.class, () -> alwaysRate.get("acme", "users"),
             "persistent 429 -> RateLimitError");
 
-        GridApiClient timeout = GridApiClient.builder().apiKey(TEST_KEY)
+        GridApiClient timeout = GridApiClient.builder().apiKey(TEST_KEY).projectKey(PROJECT_KEY)
             .baseUrl(base + "/fault/timeout").timeoutMs(150).maxRetries(0).build();
         expectError(GridApiError.TimeoutError.class, () -> timeout.get("acme", "users"),
             "no response -> TimeoutError");
@@ -173,17 +233,17 @@ public final class ContractTest {
     private static void retries() {
         // The mock's "rate" fault rejects every odd hit and passes every even
         // hit. These three calls consume hits 1..5 in order.
-        GridApiClient rate = GridApiClient.builder().apiKey(TEST_KEY)
+        GridApiClient rate = GridApiClient.builder().apiKey(TEST_KEY).projectKey(PROJECT_KEY)
             .baseUrl(base + "/fault/rate").maxRetries(2).retryDelayMs(1).build();
         check(rate.get("acme", "users").data().size() == 3, "GET retried after 429 then succeeded");
 
-        GridApiClient patchClient = GridApiClient.builder().apiKey(TEST_KEY)
+        GridApiClient patchClient = GridApiClient.builder().apiKey(TEST_KEY).projectKey(PROJECT_KEY)
             .baseUrl(base + "/fault/rate").maxRetries(2).retryDelayMs(1)
             .retryWrites(true).build();
         check(patchClient.patch("acme", "users", "1", Map.of()).updated() == 1,
             "PATCH retried when retryWrites=true");
 
-        GridApiClient postClient = GridApiClient.builder().apiKey(TEST_KEY)
+        GridApiClient postClient = GridApiClient.builder().apiKey(TEST_KEY).projectKey(PROJECT_KEY)
             .baseUrl(base + "/fault/rate").maxRetries(2).retryDelayMs(1)
             .retryWrites(true).build();
         expectError(GridApiError.RateLimitError.class,

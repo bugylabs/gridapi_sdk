@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT / "packages" / "python"))
 from gridapi import (  # noqa: E402
     AuthenticationError,
     AuthorizationError,
+    ConfigurationError,
     GridApiClient,
     ProjectNotFoundError,
     QuotaExceededError,
@@ -38,6 +39,7 @@ from gridapi import (  # noqa: E402
 # Public test fixtures defined in the shared mock server, not real credentials.
 TEST_KEY = "gp_live_testkey"
 OTHER_KEY = "gp_live_otheraccount"
+TEST_PROJECT_KEY = "gapi_live_testproject"
 
 
 def _free_port():
@@ -74,7 +76,9 @@ class GridApiContractTest(unittest.TestCase):
         if not ready:
             cls._stop_server()
             raise RuntimeError("mock server did not become ready on " + cls.base_url)
-        cls.client = GridApiClient(api_key=TEST_KEY, base_url=cls.base_url)
+        cls.client = GridApiClient(
+            api_key=TEST_KEY, project_key=TEST_PROJECT_KEY, base_url=cls.base_url
+        )
 
     @classmethod
     def _stop_server(cls):
@@ -96,7 +100,8 @@ class GridApiContractTest(unittest.TestCase):
 
     def fault_client(self, name):
         return GridApiClient(
-            api_key=TEST_KEY, base_url=f"{self.base_url}/fault/{name}"
+            api_key=TEST_KEY, project_key=TEST_PROJECT_KEY,
+            base_url=f"{self.base_url}/fault/{name}",
         )
 
     def test_list_filter_and_pagination(self):
@@ -149,14 +154,20 @@ class GridApiContractTest(unittest.TestCase):
         )
 
     def test_error_mapping(self):
-        bad_key = GridApiClient(api_key="gp_live_wrongkey123", base_url=self.base_url)
+        bad_key = GridApiClient(
+            api_key="gp_live_wrongkey123", project_key=TEST_PROJECT_KEY,
+            base_url=self.base_url,
+        )
         with self.assertRaises(AuthenticationError):
             bad_key.get_me()
-        with patch.dict(os.environ, {"GRIDAPI_API_KEY": ""}):
-            with self.assertRaises(AuthenticationError):
+        with patch.dict(os.environ, {"GRIDAPI_API_KEY": "",
+                                     "GRIDAPI_PROJECT_KEY": TEST_PROJECT_KEY}):
+            with self.assertRaises(ConfigurationError):
                 GridApiClient(base_url=self.base_url)
 
-        other = GridApiClient(api_key=OTHER_KEY, base_url=self.base_url)
+        other = GridApiClient(
+            api_key=OTHER_KEY, project_key=TEST_PROJECT_KEY, base_url=self.base_url
+        )
         with self.assertRaises(AuthorizationError):
             other.get("acme", "users")
 
@@ -216,6 +227,97 @@ class GridApiContractTest(unittest.TestCase):
         client.max_retries = 0
         with self.assertRaises(TimeoutError):
             client.get("acme", "users")
+
+    def test_missing_api_key(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(ConfigurationError) as caught:
+                GridApiClient(base_url=self.base_url)
+        self.assertIn("GRIDAPI_API_KEY", str(caught.exception))
+
+    def test_missing_project_key(self):
+        with patch.dict(os.environ, {"GRIDAPI_API_KEY": TEST_KEY}, clear=True):
+            with self.assertRaises(ConfigurationError) as caught:
+                GridApiClient(base_url=self.base_url)
+        self.assertIn("GRIDAPI_PROJECT_KEY", str(caught.exception))
+        # An explicit api key does not rescue a missing project key.
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(ConfigurationError):
+                GridApiClient(api_key=TEST_KEY, base_url=self.base_url)
+
+    def test_malformed_prefixes(self):
+        cases = [
+            dict(api_key="gapi_live_wrongprefix", project_key=TEST_PROJECT_KEY),
+            dict(api_key="gp_live_", project_key=TEST_PROJECT_KEY),
+            dict(api_key=TEST_KEY, project_key="gp_live_wrongprefix"),
+            dict(api_key=TEST_KEY, project_key="gapi_live_"),
+            dict(api_key="not-a-key", project_key=TEST_PROJECT_KEY),
+            dict(api_key=TEST_KEY, project_key="not-a-key"),
+        ]
+        for kwargs in cases:
+            with self.subTest(**kwargs):
+                with self.assertRaises(ConfigurationError):
+                    GridApiClient(base_url=self.base_url, **kwargs)
+
+    def test_verify_success_and_caching(self):
+        client = GridApiClient(
+            api_key=TEST_KEY, project_key=TEST_PROJECT_KEY, base_url=self.base_url
+        )
+        # Discovery calls must not trigger verification (no recursion).
+        client.list_projects()
+        client.get_me()
+        self.assertFalse(client._account_verified)
+
+        client.verify()  # account only
+        self.assertTrue(client._account_verified)
+        client.verify("acme")
+        client.verify("p1")  # id
+        client.verify("Acme")  # name
+        self.assertEqual(client._verified_projects, {"acme", "p1", "Acme"})
+        with patch.object(client, "list_projects", side_effect=AssertionError("recached")):
+            client.verify("acme")  # served from the project cache
+
+    def test_verify_unknown_project(self):
+        with self.assertRaises(ProjectNotFoundError) as caught:
+            self.client.verify("ghost")
+        self.assertIn("ghost", str(caught.exception))
+
+    def test_verify_forbidden_account(self):
+        other = GridApiClient(
+            api_key=OTHER_KEY, project_key=TEST_PROJECT_KEY, base_url=self.base_url
+        )
+        with self.assertRaises(AuthorizationError):
+            other.verify("acme")
+        with self.assertRaises(AuthorizationError):
+            other.get("acme", "users")
+
+    def test_no_error_message_contains_key_values(self):
+        errors = []
+        with patch.dict(os.environ, {}, clear=True):
+            try:
+                GridApiClient(base_url=self.base_url)
+            except ConfigurationError as exc:
+                errors.append(exc)
+        try:
+            GridApiClient(api_key=TEST_KEY, project_key="gp_live_wrongprefix",
+                          base_url=self.base_url)
+        except ConfigurationError as exc:
+            errors.append(exc)
+        try:
+            GridApiClient(api_key="gp_live_wrongkey123",
+                          project_key=TEST_PROJECT_KEY,
+                          base_url=self.base_url).get_me()
+        except AuthenticationError as exc:
+            errors.append(exc)
+        try:
+            self.client.verify("ghost")
+        except ProjectNotFoundError as exc:
+            errors.append(exc)
+
+        self.assertTrue(errors)
+        for error in errors:
+            for rendered in (str(error), repr(error), str(error.args), error.body or ""):
+                for key in (TEST_KEY, OTHER_KEY, TEST_PROJECT_KEY):
+                    self.assertNotIn(key, rendered)
 
     def test_discovery(self):
         projects = self.client.list_projects()

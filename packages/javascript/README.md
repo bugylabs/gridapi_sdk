@@ -56,7 +56,7 @@ The package ships ESM and CommonJS builds plus TypeScript declarations. To build
 ```ts
 import { GridApiClient } from "@gridapi/sdk";
 
-// Reads GRIDAPI_API_KEY from the environment. Server-side only.
+// Reads GRIDAPI_API_KEY and GRIDAPI_PROJECT_KEY from the environment. Server-side only.
 const api = new GridApiClient();
 
 const account = await api.getMe();
@@ -77,25 +77,30 @@ The calls above were verified against the shared contract mock server (`tests/co
 
 ## Authentication
 
-Set `GRIDAPI_API_KEY` before constructing the client, or pass `apiKey` explicitly:
+Two credentials are required. Set `GRIDAPI_API_KEY` (account key) and `GRIDAPI_PROJECT_KEY` (project key) before constructing the client, or pass `apiKey` and `projectKey` explicitly:
 
 ```ts
 import { GridApiClient } from "@gridapi/sdk";
 
-const api = new GridApiClient({ apiKey: process.env.GRIDAPI_API_KEY });
+const api = new GridApiClient({
+  apiKey: process.env.GRIDAPI_API_KEY,
+  projectKey: process.env.GRIDAPI_PROJECT_KEY,
+});
 ```
 
-- The key is **account-level**. It authenticates your account, not a single project.
-- The project slug (e.g. `"acme"` above) is a **routing/authorization identifier only**. It is never a credential and must never be treated as one.
-- The client sends `Authorization: Bearer <key>` on every request.
-- **Server-side only.** Do not embed the key in client-side JavaScript, mobile apps, or public repositories.
-- Missing key: the constructor throws `AuthenticationError` synchronously. Invalid or unauthorized keys surface as `AuthenticationError` / `AuthorizationError` on the first call.
+- `GRIDAPI_API_KEY` (`gp_live_...`) is **account-level**. It authenticates your account, not a single project. This is the only key sent to the server, as `Authorization: Bearer <key>`.
+- `GRIDAPI_PROJECT_KEY` (`gapi_live_...`) is a **local scope guard**. It is validated for format and used to assert that a project is authorized for this account via the discovery API. It is **never sent** to GridAPI (the public REST API has no project-key header).
+- The project slug (e.g. `"acme"` above) is a **routing/authorization identifier only**. It is never a credential.
+- Before each data request the client verifies the account via `GET /me` (cached) and, when a project is targeted, checks `GET /me/projects` for that project. Discovery helpers (`getMe`, `listProjects`, `listTables`, `getSchema`, `getUsage`) do not repeat this check.
+- **Server-side only.** Do not embed either key in client-side JavaScript, mobile apps, or public repositories.
+- Missing or malformed keys: the constructor throws `ConfigurationError` synchronously. Invalid account keys surface as `AuthenticationError`; unauthorized projects as `AuthorizationError` / `ProjectNotFoundError`.
 
 ## Environment variables
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `GRIDAPI_API_KEY` | Yes | — | Account-level API key. Equivalent to `apiKey` in client options. |
+| `GRIDAPI_API_KEY` | Yes | — | Account-level key (`gp_live_...`), sent as Bearer. Equivalent to `apiKey`. |
+| `GRIDAPI_PROJECT_KEY` | Yes | — | Project key (`gapi_live_...`), local scope guard only; never sent. Equivalent to `projectKey`. |
 | `GRIDAPI_BASE_URL` | No | `https://api.gridapi.in` | API base URL. Trailing slashes are stripped. Equivalent to `baseUrl`. |
 | `GRIDAPI_TIMEOUT_MS` | No | `30000` | Per-attempt request timeout in milliseconds. Equivalent to `timeoutMs`. |
 
@@ -109,6 +114,7 @@ import { GridApiClient, GridAPI } from "@gridapi/sdk";
 
 const api = new GridApiClient({
   apiKey: process.env.GRIDAPI_API_KEY,          // default: GRIDAPI_API_KEY
+  projectKey: process.env.GRIDAPI_PROJECT_KEY,  // default: GRIDAPI_PROJECT_KEY
   baseUrl: "https://api.gridapi.in",           // default: GRIDAPI_BASE_URL
   timeoutMs: 30_000,                           // default: GRIDAPI_TIMEOUT_MS or 30000
   maxRetries: 2,                               // default: 2
@@ -227,7 +233,8 @@ Exported error classes:
 | Class | When |
 | --- | --- |
 | `GridApiError` | Base class; uncategorized failures (other 5xx, etc.) |
-| `AuthenticationError` | Missing key, or HTTP 401 |
+| `ConfigurationError` | Missing or malformed account/project key, detected before any request |
+| `AuthenticationError` | Invalid account key, or HTTP 401 |
 | `AuthorizationError` | HTTP 403 — key lacks access to the project |
 | `ProjectNotFoundError` | HTTP 404 for an unknown project |
 | `TableNotFoundError` | HTTP 404 for an unknown table/sheet |
@@ -272,6 +279,7 @@ try {
 ```ts
 const api = new GridApiClient({
   apiKey: process.env.GRIDAPI_API_KEY,
+  projectKey: process.env.GRIDAPI_PROJECT_KEY,
   timeoutMs: 10_000,
   maxRetries: 3,
   retryDelayMs: 400,

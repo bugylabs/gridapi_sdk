@@ -8,6 +8,7 @@ using System.Text.Json;
 using GridAPI;
 
 const string Key = "gp_live_testkey";
+const string ProjectKey = "gapi_live_testproject";
 const string OtherKey = "gp_live_otheraccount";
 const string Base = "http://127.0.0.1:8793";
 const int Port = 8793;
@@ -92,6 +93,7 @@ try
     Console.WriteLine("mock GridAPI ready");
 
     Environment.SetEnvironmentVariable("GRIDAPI_API_KEY", Key);
+    Environment.SetEnvironmentVariable("GRIDAPI_PROJECT_KEY", ProjectKey);
     Environment.SetEnvironmentVariable("GRIDAPI_BASE_URL", Base);
     Environment.SetEnvironmentVariable("GRIDAPI_TIMEOUT_MS", "5000");
     using var client = new GridApiClient();
@@ -120,50 +122,78 @@ try
     Check(page1.Data.Count == 2 && page2.Data.Count == 1 && page2.Data[0]["id"] == "3", "pagination page=2 limit=2");
     Check(await client.CountAsync("acme", "users", "status:active") == 2, "count via limit=1 + meta.total");
 
-    // Error mapping
-    var savedKey = Environment.GetEnvironmentVariable("GRIDAPI_API_KEY");
+    // Configuration: both keys required, well-formed, and never echoed
     Environment.SetEnvironmentVariable("GRIDAPI_API_KEY", null);
-    await ThrowsAsync<AuthenticationError>(() => Task.FromResult(new GridApiClient()), "missing key => AuthenticationError");
-    Environment.SetEnvironmentVariable("GRIDAPI_API_KEY", savedKey);
+    var missingKey = await ThrowsAsync<ConfigurationException>(() => Task.FromResult(new GridApiClient()), "missing API key => ConfigurationException");
+    Environment.SetEnvironmentVariable("GRIDAPI_API_KEY", Key);
+    Environment.SetEnvironmentVariable("GRIDAPI_PROJECT_KEY", null);
+    var missingProject = await ThrowsAsync<ConfigurationException>(() => Task.FromResult(new GridApiClient()), "missing project key => ConfigurationException");
+    Environment.SetEnvironmentVariable("GRIDAPI_PROJECT_KEY", ProjectKey);
 
-    Environment.SetEnvironmentVariable("GRIDAPI_API_KEY", "invalid");
+    var malformedAccount = await ThrowsAsync<ConfigurationException>(
+        () => Task.FromResult(new GridApiClient(new GridApiOptions { ApiKey = "gapi_live_wrongprefix", ProjectKey = ProjectKey, BaseUrl = Base })),
+        "malformed account prefix => ConfigurationException");
+    var malformedProject = await ThrowsAsync<ConfigurationException>(
+        () => Task.FromResult(new GridApiClient(new GridApiOptions { ApiKey = Key, ProjectKey = "gp_live_wrongprefix", BaseUrl = Base })),
+        "malformed project prefix => ConfigurationException");
+    await ThrowsAsync<ConfigurationException>(
+        () => Task.FromResult(new GridApiClient(new GridApiOptions { ApiKey = "gp_live_", ProjectKey = ProjectKey, BaseUrl = Base })),
+        "empty account suffix => ConfigurationException");
+    await ThrowsAsync<ConfigurationException>(
+        () => Task.FromResult(new GridApiClient(new GridApiOptions { ApiKey = Key, ProjectKey = "gapi_live_", BaseUrl = Base })),
+        "empty project suffix => ConfigurationException");
+    Check(!missingKey.Message.Contains(Key) && !missingKey.Message.Contains(ProjectKey)
+          && !missingProject.Message.Contains(Key) && !missingProject.Message.Contains(ProjectKey)
+          && !malformedAccount.Message.Contains("gapi_live_wrongprefix")
+          && !malformedProject.Message.Contains("gp_live_wrongprefix"),
+          "key values absent from configuration errors");
+
+    // Verification: cached account check plus per-project scope guard
+    await client.VerifyAsync();
+    await client.VerifyAsync("acme"); // slug
+    await client.VerifyAsync("p1");   // id
+    await client.VerifyAsync("Acme"); // name
+    var afterVerify = await client.GetAsync("acme", "users");
+    Check(afterVerify.Data.Count == 3, "verify succeeded and data still works");
+    await ThrowsAsync<ProjectNotFoundError>(() => client.VerifyAsync("ghost"), "unknown project => ProjectNotFoundError");
+    await ThrowsAsync<ProjectNotFoundError>(() => client.GetAsync("missing", "users"), "data method verifies project => ProjectNotFoundError");
+
+    // Error mapping
+    Environment.SetEnvironmentVariable("GRIDAPI_API_KEY", "gp_live_unknown");
     using var badClient = new GridApiClient();
     var authErr = await ThrowsAsync<AuthenticationError>(() => badClient.GetAsync("acme", "users"), "401 => AuthenticationError");
-    Check(authErr.Status == 401, "401 status exposed");
+    Check(authErr.Status == 401 && !authErr.Message.Contains("gp_live_unknown"), "401 status exposed without key echo");
     Environment.SetEnvironmentVariable("GRIDAPI_API_KEY", Key);
 
-    using var other = new GridApiClient(new GridApiOptions { ApiKey = OtherKey, BaseUrl = Base });
-    var forbidden = await ThrowsAsync<AuthorizationError>(() => other.GetAsync("acme", "users"), "403 => AuthorizationError");
-    Check(forbidden.Status == 403, "403 status exposed");
+    using var other = new GridApiClient(new GridApiOptions { ApiKey = OtherKey, ProjectKey = ProjectKey, BaseUrl = Base });
+    await ThrowsAsync<AuthorizationError>(() => other.GetAsync("acme", "users"), "forbidden account => AuthorizationError");
 
-    var projectMissing = await ThrowsAsync<ProjectNotFoundError>(() => client.GetAsync("missing", "users"), "404 project => ProjectNotFoundError");
-    Check(projectMissing.Status == 404, "404 project status exposed");
     await ThrowsAsync<TableNotFoundError>(() => client.GetAsync("acme", "nope"), "404 table => TableNotFoundError");
     await ThrowsAsync<RecordNotFoundError>(() => client.GetByIdAsync("acme", "users", "999"), "404 record => RecordNotFoundError");
     await ThrowsAsync<ValidationError>(() => client.PostAsync("acme", "users", new GridRecord { ["__bad"] = "x" }), "400 => ValidationError");
 
     // Quota is terminal (no retries)
-    using var quota = new GridApiClient(new GridApiOptions { ApiKey = Key, BaseUrl = Base + "/fault/quota", MaxRetries = 3, RetryDelayMs = 1 });
+    using var quota = new GridApiClient(new GridApiOptions { ApiKey = Key, ProjectKey = ProjectKey, BaseUrl = Base + "/fault/quota", MaxRetries = 3, RetryDelayMs = 1 });
     var quotaErr = await ThrowsAsync<QuotaExceededError>(() => quota.GetAsync("acme", "users"), "429 quota => QuotaExceededError");
     Check(!quotaErr.Retryable && quotaErr.Code == "SUBSCRIPTION_LIMIT_REACHED", "quota terminal + code");
 
     // Transient rate limit is retried to success
-    using var rate = new GridApiClient(new GridApiOptions { ApiKey = Key, BaseUrl = Base + "/fault/rate", MaxRetries = 2, RetryDelayMs = 1 });
+    using var rate = new GridApiClient(new GridApiOptions { ApiKey = Key, ProjectKey = ProjectKey, BaseUrl = Base + "/fault/rate", MaxRetries = 2, RetryDelayMs = 1 });
     var rateResult = await rate.GetAsync("acme", "users");
     Check(rateResult.Data.Count == 3, "429 rate retried to success");
 
     // POST is never retried; on the next injected 429 it fails immediately
-    using var ratePost = new GridApiClient(new GridApiOptions { ApiKey = Key, BaseUrl = Base + "/fault/rate", MaxRetries = 3, RetryDelayMs = 1 });
+    using var ratePost = new GridApiClient(new GridApiOptions { ApiKey = Key, ProjectKey = ProjectKey, BaseUrl = Base + "/fault/rate", MaxRetries = 3, RetryDelayMs = 1 });
     await ThrowsAsync<RateLimitError>(() => ratePost.PostAsync("acme", "users", new GridRecord { ["name"] = "x" }), "POST never retried on 429");
 
     // Key redaction in error messages and bodies
-    using var echo = new GridApiClient(new GridApiOptions { ApiKey = Key, BaseUrl = Base + "/fault/echo" });
+    using var echo = new GridApiClient(new GridApiOptions { ApiKey = Key, ProjectKey = ProjectKey, BaseUrl = Base + "/fault/echo" });
     var echoErr = await ThrowsAsync<ValidationError>(() => echo.GetAsync("acme", "users"), "echo fault => ValidationError");
     Check(!echoErr.Message.Contains(Key) && echoErr.Message.Contains("[REDACTED]")
           && !string.IsNullOrEmpty(echoErr.Body) && !echoErr.Body.Contains(Key), "API key redacted from error message and body");
 
     // Timeout
-    using var timeoutClient = new GridApiClient(new GridApiOptions { ApiKey = Key, BaseUrl = Base + "/fault/timeout", TimeoutMs = 200, MaxRetries = 0 });
+    using var timeoutClient = new GridApiClient(new GridApiOptions { ApiKey = Key, ProjectKey = ProjectKey, BaseUrl = Base + "/fault/timeout", TimeoutMs = 200, MaxRetries = 0 });
     await ThrowsAsync<TimeoutError>(() => timeoutClient.GetAsync("acme", "users"), "timeout => TimeoutError");
 
     // Discovery

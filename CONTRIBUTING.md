@@ -17,9 +17,12 @@ Thanks for helping improve the GridAPI SDKs.
 
 1. **Contract first.** An endpoint, parameter, or response shape must exist in
    `openapi/openapi.yaml` (and in the backend) before an SDK exposes it.
-2. **One auth model.** Every SDK reads `GRIDAPI_API_KEY`, sends
-   `Authorization: Bearer <key>`, and treats the project slug as a routing
-   identifier only — never as a credential.
+2. **One auth model, two required keys.** Every SDK requires
+   `GRIDAPI_API_KEY` (account key, sent as `Authorization: Bearer <key>`) and
+   `GRIDAPI_PROJECT_KEY` (project key, used only as a local scope guard). Data
+   operations verify the account via `/me` and check project membership via
+   `/me/projects`. The project key is never transmitted; the project slug is a
+   routing identifier, not a credential.
 3. **No secrets in examples or CI.** Keys never appear in source, fixtures, or
    logs. Publishing uses registry trusted publishing (OIDC).
 4. **Test both sides.** A change to shared behavior adds a contract-test case;

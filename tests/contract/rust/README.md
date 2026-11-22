@@ -10,7 +10,12 @@ packages/rust/tests/contract.rs
 It boots the shared mock server (`tests/contract/mock-server.mjs`) on a private
 port for each test, waits for readiness, and kills the child process on drop.
 It covers CRUD, filtering, pagination, count, error mapping, key redaction,
-retries (including `Retry-After`, POST never retried, and 5xx), and discovery.
+retries (including `Retry-After`, POST never retried, and 5xx), discovery,
+two-key configuration errors, and project verification (account check, unknown
+project, forbidden account, caching).
+
+Every client in the tests supplies the mock project key `gapi_live_testproject`
+alongside the account key `gp_live_testkey`; the project key is never sent.
 
 Run it from the repository root:
 
