@@ -96,7 +96,7 @@ def main():
                 errors.append(f"{rel}: missing release metadata {needle!r}")
         if re.search(r"(MIT|Apache-2\.0|BSD-3-Clause)\b", text):
             errors.append(f"{rel}: permissive license metadata still present")
-    if "module github.com/bugylabs/gridapi-sdk" not in (ROOT / "go.mod").read_text():
+    if "module github.com/bugylabs/gridapi_sdk" not in (ROOT / "go.mod").read_text():
         errors.append("go.mod: module path is not the canonical repository")
     for lang in manifest["languages"]:
         readme = ROOT / "packages" / lang["id"] / "README.md"

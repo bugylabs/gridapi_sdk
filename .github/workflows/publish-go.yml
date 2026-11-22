@@ -36,7 +36,7 @@ jobs:
           if [ -z "$V" ]; then V="${GITHUB_REF_NAME}"; fi
           case "$V" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "Invalid Go tag (expected vX.Y.Z): $V"; exit 1;; esac
           MOD="$(go list -m)"
-          [ "$MOD" = "github.com/bugylabs/gridapi-sdk" ] || { echo "Unexpected module path: $MOD"; exit 1; }
+          [ "$MOD" = "github.com/bugylabs/gridapi_sdk" ] || { echo "Unexpected module path: $MOD"; exit 1; }
           echo "version=$V" >> "$GITHUB_OUTPUT"
       - name: Tidy, vet and test
         run: |
@@ -48,8 +48,8 @@ jobs:
         run: |
           V="${{ steps.ver.outputs.version }}"
           for i in $(seq 1 12); do
-            if curl -fsS "https://proxy.golang.org/github.com/bugylabs/gridapi-sdk/@v/$V.info" | grep -q '"Version"'; then
-              echo "Verified on proxy.golang.org"; curl -fsS "https://pkg.go.dev/github.com/bugylabs/gridapi-sdk@$V" -o /dev/null || true; exit 0
+            if curl -fsS "https://proxy.golang.org/github.com/bugylabs/gridapi_sdk/@v/$V.info" | grep -q '"Version"'; then
+              echo "Verified on proxy.golang.org"; curl -fsS "https://pkg.go.dev/github.com/bugylabs/gridapi_sdk@$V" -o /dev/null || true; exit 0
             fi
             sleep 10
           done
@@ -59,4 +59,4 @@ jobs:
           tag_name: ${{ steps.ver.outputs.version }}
           name: Go SDK ${{ steps.ver.outputs.version }}
           prerelease: ${{ inputs.release_type == 'prerelease' }}
-          body: 'Go module github.com/bugylabs/gridapi-sdk ${{ steps.ver.outputs.version }}. Go publishes from the Git tag; no registry upload.'
+          body: 'Go module github.com/bugylabs/gridapi_sdk ${{ steps.ver.outputs.version }}. Go publishes from the Git tag; no registry upload.'

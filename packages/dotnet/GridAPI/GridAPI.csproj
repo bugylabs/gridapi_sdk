@@ -5,8 +5,8 @@
     <Version>1.0.0</Version>
     <Authors>BugyLabs</Authors>
     <Company>BugyLabs</Company>
-    <PackageProjectUrl>https://github.com/bugylabs/gridapi-sdk/tree/main/packages/dotnet</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/bugylabs/gridapi-sdk.git</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/bugylabs/gridapi_sdk/tree/main/packages/dotnet</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/bugylabs/gridapi_sdk.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>gridapi;sdk;spreadsheet</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>

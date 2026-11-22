@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	gridapi "github.com/bugylabs/gridapi-sdk/packages/go"
+	gridapi "github.com/bugylabs/gridapi_sdk/packages/go"
 )
 
 const (

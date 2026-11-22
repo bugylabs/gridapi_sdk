@@ -4,33 +4,35 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>io.gridapi</groupId>
+  <groupId>com.bugylabs</groupId>
   <artifactId>gridapi-sdk</artifactId>
   <version>1.0.0</version>
   <packaging>jar</packaging>
 
   <name>GridAPI Java SDK</name>
   <description>Official Java client for the GridAPI public REST API</description>
-  <url>https://github.com/bugylabs/gridapi-sdk</url>
+  <url>https://github.com/bugylabs/gridapi_sdk</url>
 
   <licenses>
     <license>
       <name>BugyLabs Proprietary Non-Commercial License</name>
-      <url>https://github.com/bugylabs/gridapi-sdk/blob/main/LICENSE</url>
+      <url>https://github.com/bugylabs/gridapi_sdk/blob/main/LICENSE</url>
     </license>
   </licenses>
 
   <developers>
     <developer>
-      <name>GridAPI</name>
-      <url>https://gridapi.in</url>
+      <name>BugyLabs</name>
+      <organization>BugyLabs</organization>
+      <organizationUrl>https://bugylabs.com</organizationUrl>
+      <url>https://github.com/bugylabs</url>
     </developer>
   </developers>
 
   <scm>
-    <url>https://github.com/bugylabs/gridapi-sdk</url>
-    <connection>scm:git:https://github.com/bugylabs/gridapi-sdk.git</connection>
-    <developerConnection>scm:git:git@github.com:gridapi/gridapi_sdk.git</developerConnection>
+    <url>https://github.com/bugylabs/gridapi_sdk</url>
+    <connection>scm:git:https://github.com/bugylabs/gridapi_sdk.git</connection>
+    <developerConnection>scm:git:git@github.com:bugylabs/gridapi_sdk.git</developerConnection>
   </scm>
 
   <properties>
@@ -58,6 +60,9 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-gpg-plugin</artifactId>
         <version>3.2.7</version>
+        <configuration>
+          <keyname>9FA34FA29C9759534B98910946547264E642F2E2</keyname>
+        </configuration>
         <executions><execution><id>sign-artifacts</id><phase>verify</phase><goals><goal>sign</goal></goals></execution></executions>
       </plugin>
       <plugin>

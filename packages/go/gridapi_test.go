@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	gridapi "github.com/bugylabs/gridapi-sdk/packages/go"
+	gridapi "github.com/bugylabs/gridapi_sdk/packages/go"
 )
 
 const (

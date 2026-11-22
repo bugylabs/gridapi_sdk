@@ -10,7 +10,7 @@
     },
     "license": {
       "name": "BugyLabs Proprietary Non-Commercial License",
-      "url": "https://github.com/bugylabs/gridapi-sdk/blob/main/LICENSE"
+      "url": "https://github.com/bugylabs/gridapi_sdk/blob/main/LICENSE"
     }
   },
   "servers": [
